@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { X, Trash2, Save, User, Mail, Phone, Clock, FileText, Activity, Calendar, Globe } from "lucide-react"
+import { X, Trash2, Save, User, Mail, Phone, Clock, FileText, Activity, Calendar, Globe, CreditCard } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { nationalities } from "@/lib/nationalities"
 
@@ -207,6 +207,25 @@ export const BookingDetailModal = ({ booking, treatments = [], onClose, onSave, 
                                     />
                                 )}
                             </div>
+
+                            {/* Payment Method */}
+                            <div className="space-y-1 col-span-2">
+                                <label className="text-xs font-semibold text-foreground/60">Payment Method</label>
+                                <div className="relative">
+                                    <CreditCard className="w-3 h-3 absolute left-4 top-3 text-gray-400" />
+                                    <select
+                                        className="w-full bg-white border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-sm text-black focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                        value={formData.paymentMethod || ""}
+                                        onChange={(e) => handleChange("paymentMethod", e.target.value)}
+                                    >
+                                        <option value="">Select Payment Method...</option>
+                                        <option value="Cash">Cash</option>
+                                        <option value="Transfer">Bank Transfer</option>
+                                        <option value="Credit Card">Credit Card</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div className="space-y-1 col-span-2">
                                 <label className="text-xs font-semibold text-foreground/60">Status</label>
                                 <select

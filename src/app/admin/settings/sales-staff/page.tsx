@@ -11,10 +11,14 @@ export interface Salesman {
     id: string
     name: string
     nickname: string
-    commissionRate: number
+    commissionRate: number // Sales Commission (e.g. 5%)
     active: boolean
     photoUrl?: string
     joinedDate: string
+    // New Fields
+    role?: "sales" | "therapist" | "dual" | "manager"
+    baseSalary?: number
+    hourlyRate?: number
 }
 
 export default function SalesStaffPage() {
@@ -29,7 +33,10 @@ export default function SalesStaffPage() {
         name: "",
         nickname: "",
         commissionRate: 0.05,
-        active: true
+        active: true,
+        role: "sales",
+        baseSalary: 15000,
+        hourlyRate: 100
     })
 
     // -- Actions --
@@ -43,7 +50,10 @@ export default function SalesStaffPage() {
             commissionRate: formData.commissionRate || 0.05,
             active: true,
             photoUrl: formData.photoUrl || "",
-            joinedDate: new Date().toISOString()
+            joinedDate: new Date().toISOString(),
+            role: formData.role || "sales",
+            baseSalary: formData.baseSalary || 0,
+            hourlyRate: formData.hourlyRate || 0
         }
 
         await salesmanOps.add(newOne)
@@ -69,7 +79,7 @@ export default function SalesStaffPage() {
     }
 
     const resetForm = () => {
-        setFormData({ name: "", nickname: "", commissionRate: 0.05, active: true })
+        setFormData({ name: "", nickname: "", commissionRate: 0.05, active: true, role: "sales", baseSalary: 15000, hourlyRate: 100 })
         setEditingId(null)
     }
 
@@ -119,6 +129,7 @@ export default function SalesStaffPage() {
                                             placeholder="e.g. Somchai Jai-dee"
                                         />
                                     </div>
+
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="text-xs uppercase font-bold text-gray-400">Nickname</label>
@@ -130,24 +141,70 @@ export default function SalesStaffPage() {
                                             />
                                         </div>
                                         <div>
-                                            <label className="text-xs uppercase font-bold text-gray-400">Commission Rate</label>
-                                            <input
-                                                type="number"
-                                                step="0.01"
-                                                value={formData.commissionRate}
-                                                onChange={e => setFormData({ ...formData, commissionRate: parseFloat(e.target.value) })}
+                                            <label className="text-xs uppercase font-bold text-gray-400">Role</label>
+                                            <select
+                                                value={formData.role}
+                                                onChange={e => setFormData({ ...formData, role: e.target.value as any })}
                                                 className="w-full mt-1 p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-[#8B4513]"
-                                            />
-                                            <div className="text-[10px] text-right text-gray-400 mt-1">
-                                                {(formData.commissionRate! * 100).toFixed(0)}%
+                                            >
+                                                <option value="sales">Sales Only</option>
+                                                <option value="therapist">Therapist Only</option>
+                                                <option value="dual">Dual (Both)</option>
+                                                <option value="manager">Manager</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {/* Financials */}
+                                    <div className="p-4 bg-orange-50 rounded-xl space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-bold uppercase text-[#8B4513]">Payroll Settings</span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-[10px] uppercase font-bold text-gray-400">Base Salary (THB)</label>
+                                                <input
+                                                    type="number"
+                                                    value={formData.baseSalary}
+                                                    onChange={e => setFormData({ ...formData, baseSalary: Number(e.target.value) })}
+                                                    className="w-full mt-1 p-2 bg-white rounded-lg border border-orange-100 focus:outline-none focus:border-[#8B4513]"
+                                                />
                                             </div>
+                                            {(formData.role === "sales" || formData.role === "dual" || formData.role === "manager") && (
+                                                <div>
+                                                    <label className="text-[10px] uppercase font-bold text-gray-400">Comm. %</label>
+                                                    <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        value={formData.commissionRate}
+                                                        onChange={e => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
+                                                        className="w-full mt-1 p-2 bg-white rounded-lg border border-orange-100 focus:outline-none focus:border-[#8B4513]"
+                                                    />
+                                                </div>
+                                            )}
+                                            {(formData.role === "therapist" || formData.role === "dual") && (
+                                                <div className="col-span-2">
+                                                    <label className="text-[10px] uppercase font-bold text-gray-400">Hourly Service Rate (THB)</label>
+                                                    <input
+                                                        type="number"
+                                                        value={formData.hourlyRate}
+                                                        onChange={e => setFormData({ ...formData, hourlyRate: Number(e.target.value) })}
+                                                        className="w-full mt-1 p-2 bg-white rounded-lg border border-orange-100 focus:outline-none focus:border-[#8B4513]"
+                                                        placeholder="e.g. 100"
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
 
                                 <div className="mt-8 flex gap-3">
-                                    <Button onClick={() => setIsAdding(false)} variant="ghost" className="flex-1 rounded-xl">Cancel</Button>
-                                    <Button onClick={editingId ? handleUpdate : handleAdd} className="flex-1 rounded-xl bg-[#8B4513] hover:bg-[#6d360f]">
+                                    <Button onClick={() => setIsAdding(false)} variant="ghost" className="flex-1 rounded-xl text-gray-500 hover:text-black hover:bg-gray-100">Cancel</Button>
+                                    <Button
+                                        onClick={editingId ? handleUpdate : handleAdd}
+                                        disabled={!formData.name || !formData.nickname}
+                                        className="flex-1 rounded-xl bg-[#8B4513] hover:bg-[#6d360f] disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
                                         {editingId ? "Save Changes" : "Create Member"}
                                     </Button>
                                 </div>
@@ -171,8 +228,15 @@ export default function SalesStaffPage() {
                             </div>
                             <div className="flex items-center gap-6">
                                 <div className="text-right">
-                                    <p className="text-xs uppercase font-bold text-gray-300">Rate</p>
-                                    <p className="font-mono font-bold text-[#8B4513]">{(s.commissionRate * 100)}%</p>
+                                    <p className="text-xs uppercase font-bold text-gray-300">{s.role || "sales"}</p>
+                                    <div className="flex flex-col items-end">
+                                        {(s.role === "sales" || s.role === "dual" || !s.role) && (
+                                            <span className="font-mono font-bold text-[#8B4513] text-sm">Comm: {(s.commissionRate * 100)}%</span>
+                                        )}
+                                        {(s.role === "therapist" || s.role === "dual") && (
+                                            <span className="font-mono font-bold text-emerald-600 text-xs">Rate: {s.hourlyRate}฿/hr</span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="flex gap-1">
                                     <button onClick={() => startEdit(s)} className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-blue-500">
@@ -189,6 +253,6 @@ export default function SalesStaffPage() {
                     {/* Inactive Section (if any) could go here */}
                 </div>
             </div>
-        </div>
+        </div >
     )
 }

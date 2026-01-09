@@ -21,17 +21,29 @@ import {
   Waves,
   Mountain,
   CloudFog,
-  Minus
+  Minus,
+  Menu,
+  X
 } from "lucide-react"
 import { useRef, useEffect, useState } from "react"
 
 export default function Home() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isLoaded, setIsLoaded] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     setIsLoaded(true)
   }, [])
+
+  // Lock body scroll when menu is open
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = "unset"
+    }
+  }, [isMobileMenuOpen])
 
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -74,22 +86,53 @@ export default function Home() {
               The Altar
               <span className="absolute -bottom-2 left-0 w-0 h-[1px] bg-primary group-hover:w-full transition-all duration-300"></span>
             </a>
-            <a href="#expansion" className="hover:text-primary hover:text-glow transition-all duration-300 flex items-center gap-2 group">
-              <Sparkles className="w-3 h-3 text-primary animate-pulse" /> Ascend
-            </a>
+            <Link href="/members" className="hover:text-primary hover:text-glow transition-all duration-300 relative group text-primary/90">
+              MEMBERS
+              <span className="absolute -bottom-2 left-0 w-0 h-[1px] bg-primary group-hover:w-full transition-all duration-300"></span>
+            </Link>
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-6">
-            <VibeMeter />
+          <div className="flex items-center gap-4 md:gap-6">
+            <div className="hidden md:block">
+              <VibeMeter />
+            </div>
             <Link href="/booking">
-              <button className="px-8 py-3 rounded-sm border border-primary/30 hover:border-primary bg-secondary/30 hover:bg-primary hover:text-background transition-all duration-500 text-[10px] font-bold tracking-[0.25em] uppercase shadow-[0_0_15px_rgba(209,192,155,0.05)] hover:shadow-[0_0_25px_rgba(209,192,155,0.4)]">
-                Book Ritual
+              <button className="px-4 md:px-8 py-2 md:py-3 rounded-sm border border-primary/30 hover:border-primary bg-secondary/30 hover:bg-primary hover:text-background transition-all duration-500 text-[10px] font-bold tracking-[0.25em] uppercase shadow-[0_0_15px_rgba(209,192,155,0.05)] hover:shadow-[0_0_25px_rgba(209,192,155,0.4)]">
+                Book <span className="hidden md:inline">Ritual</span>
               </button>
             </Link>
+
+            {/* Mobile Menu Toggle */}
+            <button
+              className="md:hidden text-primary p-2"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            >
+              {isMobileMenuOpen ? <X /> : <Menu />}
+            </button>
           </div>
         </div>
       </nav>
+
+      {/* Mobile Menu Overlay */}
+      <motion.div
+        initial={{ opacity: 0, pointerEvents: "none" }}
+        animate={{ opacity: isMobileMenuOpen ? 1 : 0, pointerEvents: isMobileMenuOpen ? "auto" : "none" }}
+        transition={{ duration: 0.3 }}
+        className="fixed inset-0 z-40 bg-[#051818]/95 backdrop-blur-xl md:hidden flex flex-col items-center justify-center"
+      >
+        <div className="flex flex-col items-center gap-12 text-sm font-bold tracking-[0.3em] uppercase text-primary">
+          <Link href="/biomarker" onClick={() => setIsMobileMenuOpen(false)}>Biomarker</Link>
+          <a href="#protocols" onClick={() => setIsMobileMenuOpen(false)}>Rituals</a>
+          <a href="#lab" onClick={() => setIsMobileMenuOpen(false)}>The Altar</a>
+          <Link href="/members" onClick={() => setIsMobileMenuOpen(false)} className="text-white border border-white/20 px-8 py-3 rounded-full">
+            Members
+          </Link>
+          <div className="pt-8">
+            <VibeMeter />
+          </div>
+        </div>
+      </motion.div>
 
       {/* Hero Section */}
       <section className="relative pt-48 pb-32 px-6 overflow-hidden min-h-[92vh] flex flex-col justify-center">

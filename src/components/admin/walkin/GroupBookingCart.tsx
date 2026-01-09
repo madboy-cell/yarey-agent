@@ -35,6 +35,7 @@ export interface CartItem {
     voucherCode?: string
     voucherId?: string
     manualDiscount?: number
+    therapistId?: string
 }
 
 interface GroupBookingCartProps {
@@ -45,9 +46,9 @@ interface GroupBookingCartProps {
     onRemoveGuest: (id: string) => void
     onUpdateGuest: (id: string, updates: Partial<CartItem>) => void
     onCopyPrevious: (id: string) => void
-    onCheckout: () => void
+    onCheckout: (paymentMethod: string) => void
     onValidateVoucher?: (code: string) => Voucher | null
-    salesmen: { id: string; nickname: string; active: boolean }[]
+    salesmen: { id: string; nickname: string; active: boolean; role?: string }[]
     selectedSalesmanId: string | null
     onSelectSalesman: (id: string) => void
 }
@@ -82,6 +83,7 @@ export function GroupBookingCart({
     })
 
     const [voucherInput, setVoucherInput] = React.useState("")
+    const [paymentMethod, setPaymentMethod] = React.useState("Cash")
 
     return (
         <div className="h-full flex flex-col bg-card border-l border-primary/10 shadow-2xl relative z-20">
@@ -238,6 +240,27 @@ export function GroupBookingCart({
 
                                             </div>
 
+                                            {/* Therapist Selection (New) */}
+                                            <div className="pt-2 border-t border-dashed border-gray-200/20">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <Users className="w-3 h-3 text-emerald-500" />
+                                                    <span className="text-[10px] uppercase font-bold text-gray-400">Therapist Assignment</span>
+                                                </div>
+                                                <select
+                                                    value={guest.therapistId || ""}
+                                                    onChange={(e) => onUpdateGuest(guest.tempId, { therapistId: e.target.value })}
+                                                    className="w-full bg-[#063836] border border-emerald-500/30 rounded-lg p-2 text-xs font-medium text-emerald-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                                >
+                                                    <option value="">-- No Therapist assigned --</option>
+                                                    <option value="OUTSOURCE">⚡ External / Outsource</option>
+                                                    <optgroup label="In-House Team">
+                                                        {salesmen.filter(s => s.role === 'therapist' || s.role === 'dual').map(s => (
+                                                            <option key={s.id} value={s.id}>{s.nickname}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                </select>
+                                            </div>
+
                                             {/* Voucher Redemption */}
                                             {onValidateVoucher && !guest.voucherId && (
                                                 <div className="pt-2 border-t border-dashed border-white/20 space-y-2">
@@ -355,6 +378,25 @@ export function GroupBookingCart({
 
             {/* Footer / Checkout */}
             <div className="p-6 bg-card border-t border-primary/10 pb-10">
+                {/* Payment Method Selector */}
+                <div className="mb-4">
+                    <label className="text-[10px] uppercase font-bold text-foreground/40 mb-2 block tracking-wider">Payment Method</label>
+                    <div className="relative">
+                        <CreditCard className="absolute left-3 top-3 w-4 h-4 text-gray-500 z-10" />
+                        <select
+                            value={paymentMethod}
+                            onChange={(e) => setPaymentMethod(e.target.value)}
+                            className="w-full pl-9 bg-white border border-gray-300 rounded-xl p-3 text-sm font-medium text-black focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        >
+                            <option value="Cash">Cash</option>
+                            <option value="Credit Card">Credit Card</option>
+                            <option value="Transfer">Bank Transfer / QR</option>
+                            <option value="WeChat Pay">WeChat Pay</option>
+                            <option value="AliPay">AliPay</option>
+                        </select>
+                    </div>
+                </div>
+
                 {/* Salesman Selector */}
                 <div className="mb-6">
                     <label className="text-[10px] uppercase font-bold text-foreground/40 mb-2 block tracking-wider">Sold By (Commission)</label>
@@ -377,7 +419,7 @@ export function GroupBookingCart({
 
                 <Button
                     size="lg"
-                    onClick={onCheckout}
+                    onClick={() => onCheckout(paymentMethod)}
                     className={`w-full rounded-xl py-8 text-lg font-serif shadow-xl transition-all ${isCheckoutDisabled ? "bg-gray-200 text-gray-600 shadow-none cursor-not-allowed" : "bg-primary hover:bg-primary/90 !text-white shadow-primary/20"}`}
                     style={!isCheckoutDisabled ? { color: 'white' } : undefined}
                     disabled={isCheckoutDisabled}

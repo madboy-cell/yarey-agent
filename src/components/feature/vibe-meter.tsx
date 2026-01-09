@@ -21,8 +21,8 @@ export function VibeMeter() {
 
         // Determine current phase
         let phase = "Morning"
-        if (hour >= 11 && hour < 16) phase = "SunPeak"
-        if (hour >= 16) phase = "Evening"
+        if (hour >= 14 && hour < 17) phase = "Sun Peak"
+        if (hour >= 17) phase = "Evening"
 
         console.log('[VibeMeter] Current time:', hour, '- Phase:', phase)
         console.log('[VibeMeter] Today string:', todayStr)
@@ -32,35 +32,25 @@ export function VibeMeter() {
             const isToday = b.date === "Today" || b.date === todayStr
             const isActive = b.status !== "Cancelled"
 
+            // 1. Status Check (Active only)
+            const isActiveStatus = ["Arrived", "In Ritual", "Checked In", "Started"].includes(b.status)
+
+            // 2. Phase Check (Lazy Staff Proofing: Ensure booking is for NOW)
+            // Parse booking time to see if It matches current phase. 
+            // This prevents "Morning" guests (who forgot to be marked Complete) from clogging "Sun Peak" count.
             const [timePart, period] = b.time?.split(" ") || []
             let bHour = parseInt(timePart?.split(":")[0] || "0")
-
-            // Convert 12-hour to 24-hour format
             if (period) {
-                if (period.toUpperCase() === "PM" && bHour !== 12) {
-                    bHour += 12
-                } else if (period.toUpperCase() === "AM" && bHour === 12) {
-                    bHour = 0
-                }
+                if (period.toUpperCase() === "PM" && bHour !== 12) bHour += 12
+                else if (period.toUpperCase() === "AM" && bHour === 12) bHour = 0
             }
 
             let bPhase = "Morning"
-            if (bHour >= 11 && bHour < 16) bPhase = "SunPeak"
-            if (bHour >= 16) bPhase = "Evening"
+            if (bHour >= 14 && bHour < 17) bPhase = "Sun Peak" // Sync with Admin Page Logic
+            else if (bHour >= 17) bPhase = "Evening"
+            else bPhase = "Morning"
 
-            const matches = isToday && isActive && bPhase === phase
-
-            if (isToday && isActive) {
-                console.log('[VibeMeter] Booking:', {
-                    date: b.date,
-                    time: b.time,
-                    phase: bPhase,
-                    guests: b.guests,
-                    matchesCurrentPhase: matches
-                })
-            }
-
-            return matches
+            return isToday && isActiveStatus && (bPhase === phase)
         })
 
         console.log('[VibeMeter] Filtered bookings for', phase, ':', filtered.length)

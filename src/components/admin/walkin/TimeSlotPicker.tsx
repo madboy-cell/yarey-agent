@@ -18,8 +18,8 @@ export function TimeSlotPicker({ selectedTime, onSelect }: TimeSlotPickerProps) 
     }
 
     return (
-        <div className="border-t border-border/20 bg-white/50 backdrop-blur-md p-4 flex items-center gap-4 overflow-x-auto no-scrollbar">
-            <div className="flex items-center gap-2 text-foreground/40 pr-4 border-r border-border/20">
+        <div className="border-t border-white/5 bg-[#051818]/80 backdrop-blur-md p-4 flex items-center gap-4 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-2 text-gray-500 pr-4 border-r border-white/10">
                 <Clock className="w-4 h-4" />
                 <span className="text-[10px] uppercase font-bold tracking-widest whitespace-nowrap">Start Time</span>
             </div>
@@ -27,7 +27,7 @@ export function TimeSlotPicker({ selectedTime, onSelect }: TimeSlotPickerProps) 
             <div className="flex gap-2">
                 <button
                     onClick={() => onSelect("Now")}
-                    className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${selectedTime === "Now" ? "bg-primary text-white shadow-lg" : "bg-white border border-border text-foreground/60 hover:border-primary/50"}`}
+                    className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${selectedTime === "Now" ? "bg-[#D1C09B] text-[#051818] shadow-[0_0_15px_rgba(209,192,155,0.3)] scale-105" : "bg-[#0c2627] border border-white/10 text-gray-400 hover:border-[#D1C09B]/50 hover:text-white"}`}
                 >
                     Now
                 </button>
@@ -35,7 +35,7 @@ export function TimeSlotPicker({ selectedTime, onSelect }: TimeSlotPickerProps) 
                     <button
                         key={time}
                         onClick={() => onSelect(time)}
-                        className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${selectedTime === time ? "bg-primary text-white shadow-lg" : "bg-white border border-border text-foreground/60 hover:border-primary/50"}`}
+                        className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all whitespace-nowrap ${selectedTime === time ? "bg-[#D1C09B] text-[#051818] shadow-[0_0_15px_rgba(209,192,155,0.3)] scale-105" : "bg-[#0c2627] border border-white/10 text-gray-400 hover:border-[#D1C09B]/50 hover:text-white"}`}
                     >
                         {time}
                     </button>

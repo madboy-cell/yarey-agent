@@ -61,14 +61,14 @@ export function ServiceGrid({ treatments, onSelect }: ServiceGridProps) {
                                     whileTap={{ scale: 0.98 }}
                                     key={t.id}
                                     onClick={() => onSelect(t)}
-                                    className={`relative p-5 rounded-xl border border-white/5 bg-[#081C1C] text-left transition-all group hover:bg-[#0F2E2E] hover:border-primary/30 border-l-[3px] shadow-lg ${getAccentColor(t.category)}`}
+                                    className={`relative p-5 rounded-xl border border-white/10 bg-[#081C1C] text-left transition-all group hover:bg-[#0F2E2E] hover:border-primary/30 border-l-[3px] shadow-lg ${getAccentColor(t.category)}`}
                                 >
                                     <div className="flex flex-col h-full justify-between gap-4">
-                                        <div className="font-serif text-lg leading-tight text-foreground group-hover:text-white transition-colors">
+                                        <div className="font-serif text-lg leading-tight text-white/90 group-hover:text-white transition-colors">
                                             {t.title}
                                         </div>
                                         <div className="flex justify-between items-end border-t border-white/5 pt-3">
-                                            <span className="text-xs font-bold text-foreground/40">{t.duration_min} min</span>
+                                            <span className="text-xs font-bold text-gray-400">{t.duration_min} min</span>
                                             <span className="text-sm font-mono font-medium text-primary">฿{t.price_thb.toLocaleString()}</span>
                                         </div>
                                     </div>

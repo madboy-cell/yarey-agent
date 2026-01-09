@@ -3,13 +3,14 @@
 import { useEffect, useState, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Container } from "@/components/layout/container"
 import { PulseTab } from "@/components/admin/PulseTab"
 import { Button } from "@/components/ui/button"
 import {
     Users, Calendar, Clock, MoreVertical, Wind, Sun, Users2, CheckCircle2,
     Trash2, QrCode, MessageCircle, Play, CheckSquare, LogOut, Plus, Edit2,
-    Eye, EyeOff, Save, X, LayoutGrid, List, MapPin, Receipt, Gift, Mail, Download, FlaskConical
+    Card, Eye, EyeOff, Save, X, LayoutGrid, List, MapPin, Receipt, Gift, Mail, Download, FlaskConical, DollarSign, User, ChevronDown
 } from "lucide-react"
 import html2canvas from "html2canvas"
 import { useFirestoreCollection, useFirestoreCRUD, useFirestoreDoc } from "@/hooks/useFirestore"
@@ -17,6 +18,7 @@ import { db } from "@/lib/firebase"
 import { collection, doc, onSnapshot } from "firebase/firestore"
 import { BookingCard } from "@/components/admin/BookingCard"
 import { BookingDetailModal } from "@/components/admin/BookingDetailModal"
+import { DailyClosingModal } from "@/components/admin/DailyClosingModal" // Import Z-Report
 
 // Types
 export interface Booking {
@@ -33,6 +35,7 @@ export interface Booking {
     }
     notes?: string
     priceSnapshot?: number
+    paymentMethod?: "Cash" | "Transfer" | "Credit Card"
     // Salesman / Commission
     salesmanId?: string
     commissionSnapshot?: number
@@ -77,6 +80,15 @@ interface Voucher {
     status: "ISSUED" | "REDEEMED" | "VOID"
     recipientName: string
     issuedAt: string
+    expiresAt?: string
+    clientId?: string
+}
+
+interface Client {
+    id: string
+    name: string
+    email: string
+    phone?: string
 }
 
 interface Session {
@@ -98,21 +110,59 @@ interface Session {
 }
 
 export default function AdminDashboard() {
+    const searchParams = useSearchParams()
     const [activeTab, setActiveTab] = useState<"sanctuary" | "menu" | "pulse" | "vouchers" | "lab">("sanctuary")
+
+    // Handle Deep Links (e.g. from CRM)
+    useEffect(() => {
+        const tab = searchParams.get("tab")
+        const recipient = searchParams.get("recipient")
+        const email = searchParams.get("email")
+        const clientId = searchParams.get("clientId")
+
+        if (tab === "vouchers") {
+            setActiveTab("vouchers")
+        }
+        if (recipient) {
+            setVoucherForm(prev => ({ ...prev, recipientName: recipient, clientId: clientId || undefined }))
+        }
+    }, [searchParams])
     // Optimistic UI for instant feedback
     const [optimisticVibe, setOptimisticVibe] = useState<string | null>(null)
+    const [headerInfo, setHeaderInfo] = useState("")
+
+    // Live Clock & Phase Logic
+    useEffect(() => {
+        const updateHeader = () => {
+            const now = new Date()
+            const date = now.toLocaleDateString("en-GB", { day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase()
+            const hour = now.getHours()
+            let phase = "MORNING"
+            // 7AM-2PM Morning, 2PM-5PM Sun Peak, 5PM+ Evening (Matches logic elsewhere)
+            if (hour >= 14) phase = "SUN PEAK"
+            if (hour >= 17) phase = "EVENING"
+
+            setHeaderInfo(`${date} • ${phase}`)
+        }
+        updateHeader()
+        const timer = setInterval(updateHeader, 60000)
+        return () => clearInterval(timer)
+    }, [])
 
     // --- Remote Data ---
-    // --- Remote Data ---
+    const [showDailyClosing, setShowDailyClosing] = useState(false)
+
+    // Data Fetching
     const { data: rawBookings } = useFirestoreCollection<Booking>("bookings")
     const { data: treatments } = useFirestoreCollection<Treatment>("treatments")
     const { data: blocks } = useFirestoreCollection<Block>("blocks")
     const { data: vouchers } = useFirestoreCollection<Voucher>("vouchers")
     const { data: salesmen } = useFirestoreCollection<Salesman>("salesmen")
     const { data: sessions } = useFirestoreCollection<Session>("sessions")
+    const { data: clients } = useFirestoreCollection<Client>("clients") // Fetch Clients
 
     // Derived: Today's Bookings
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = new Date().toLocaleDateString("en-CA")
     const todayBookings = rawBookings.filter(b => b.date === "Today" || b.date === todayStr)
     const bookings = rawBookings // Alias backwards compatibility for history lookups like 'getVisitCount'
 
@@ -177,9 +227,13 @@ export default function AdminDashboard() {
     const [voucherForm, setVoucherForm] = useState({
         treatmentId: "",
         pricePaid: 0,
-        recipientName: ""
+        recipientName: "",
+        validityPeriod: "3M", // 1M, 3M, 6M, 1Y, CUSTOM
+        customExpiration: "",
+        clientId: undefined as string | undefined
     })
     const [generatedVoucher, setGeneratedVoucher] = useState<Voucher | null>(null)
+    const [isMemberSearchOpen, setIsMemberSearchOpen] = useState(false)
 
     // Ticket Generation State
     const [tempVoucher, setTempVoucher] = useState<Voucher | null>(null)
@@ -285,7 +339,12 @@ export default function AdminDashboard() {
 
     // Voucher Logic
     const generateVoucher = async () => {
-        if (!voucherForm.treatmentId || !voucherForm.recipientName) return alert("Please select treatment and recipient")
+        if (!voucherForm.treatmentId) return alert("Please select a treatment")
+
+        // Strict Member Check
+        if (!voucherForm.clientId) {
+            return alert("Restricted: You must select a valid member from the search list. Walk-in guests must be registered first.")
+        }
 
         const treatment = treatments.find(t => t.id === voucherForm.treatmentId)
         if (!treatment) return
@@ -295,12 +354,24 @@ export default function AdminDashboard() {
         const newVoucher = {
             code,
             treatmentId: treatment.id,
-            treatmentTitle: treatment.title,
+            // Prepend duration for easy parsing by Member Portal regex
+            treatmentTitle: `${treatment.duration_min}m | ${treatment.title}`,
             pricePaid: voucherForm.pricePaid,
             originalPrice: treatment.price_thb,
             status: "ISSUED",
             recipientName: voucherForm.recipientName,
-            issuedAt: new Date().toISOString()
+            clientId: voucherForm.clientId,
+            issuedAt: new Date().toISOString(),
+            expiresAt: (() => {
+                const d = new Date()
+                if (voucherForm.validityPeriod === "1M") d.setMonth(d.getMonth() + 1)
+                else if (voucherForm.validityPeriod === "3M") d.setMonth(d.getMonth() + 3)
+                else if (voucherForm.validityPeriod === "6M") d.setMonth(d.getMonth() + 6)
+                else if (voucherForm.validityPeriod === "1Y") d.setFullYear(d.getFullYear() + 1)
+                else if (voucherForm.validityPeriod === "CUSTOM" && voucherForm.customExpiration) return new Date(voucherForm.customExpiration).toISOString()
+                else d.setMonth(d.getMonth() + 3) // Default fallback
+                return d.toISOString()
+            })()
         }
 
         const id = await voucherOps.add(newVoucher)
@@ -411,7 +482,7 @@ export default function AdminDashboard() {
                             animate={{ opacity: 1, x: 0 }}
                             className="text-[10px] uppercase tracking-[0.5em] text-primary/60 font-medium"
                         >
-                            Staff Portal • Phuket Wing
+                            {headerInfo || "STAFF PORTAL • PHUKET"}
                         </motion.div>
                         <h1 className="text-4xl md:text-6xl font-serif text-foreground tracking-tighter lowercase leading-none">Host Sanctuary.</h1>
                     </div>
@@ -436,11 +507,26 @@ export default function AdminDashboard() {
                             ))}
                         </div>
 
+
                         {/* New Booking Action */}
                         <div className="flex gap-4">
-                            <Link href="/admin/settings/sales-staff">
-                                <Button variant="outline" className="rounded-full border-primary/20 text-primary hover:bg-primary/5 px-6 py-2 h-auto text-xs font-bold uppercase tracking-widest">
-                                    <Users className="w-4 h-4 mr-2" /> Staff
+                            <Button
+                                variant="outline"
+                                onClick={() => setShowDailyClosing(true)}
+                                className="rounded-full border-primary/20 text-primary hover:bg-primary/5 px-4 py-2 h-auto text-xs font-bold uppercase tracking-widest w-10 h-10 p-0 flex items-center justify-center"
+                                title="Daily Closing Z-Report"
+                            >
+                                <Receipt className="w-4 h-4" />
+                            </Button>
+
+                            <Link href="/admin/finance">
+                                <Button variant="outline" className="rounded-full border-primary/20 text-primary hover:bg-primary/5 px-4 py-2 h-auto text-xs font-bold uppercase tracking-widest w-10 h-10 p-0 flex items-center justify-center" title="Finance & Payroll">
+                                    <DollarSign className="w-4 h-4" />
+                                </Button>
+                            </Link>
+                            <Link href="/admin/clients">
+                                <Button variant="outline" className="rounded-full border-primary/20 text-primary hover:bg-primary/5 px-4 py-2 h-auto text-xs font-bold uppercase tracking-widest w-10 h-10 p-0 flex items-center justify-center" title="Client CRM">
+                                    <User className="w-4 h-4" />
                                 </Button>
                             </Link>
                             <Link href="/admin/walk-in">
@@ -475,7 +561,8 @@ export default function AdminDashboard() {
                                     </h3>
                                     <div className="flex items-center gap-2">
                                         <span className="text-[10px] bg-primary/5 px-3 py-1 rounded-full text-primary font-bold tracking-widest uppercase">
-                                            {items.reduce((acc, b) => acc + (Number(b.guests) || 1), 0)} Guests
+                                            {items.filter(b => ["Arrived", "In Ritual", "Complete"].includes(b.status)).reduce((acc, b) => acc + (Number(b.guests) || 1), 0)}
+                                            <span className="opacity-40"> / {items.reduce((acc, b) => acc + (Number(b.guests) || 1), 0)}</span> Guests
                                         </span>
                                         <Button
                                             variant="ghost"
@@ -657,7 +744,7 @@ export default function AdminDashboard() {
                                         >
                                             <option value="">-- Choose Treatment --</option>
                                             {treatments.filter(t => t.active).map(t => (
-                                                <option key={t.id} value={t.id}>{t.title} ({t.price_thb} THB)</option>
+                                                <option key={t.id} value={t.id}>{t.duration_min}m | {t.title} ({t.price_thb} THB)</option>
                                             ))}
                                         </select>
                                     </div>
@@ -673,15 +760,84 @@ export default function AdminDashboard() {
                                         <p className="text-[10px] text-foreground/40 italic pl-2">Current Standard Price: {treatments.find(t => t.id === voucherForm.treatmentId)?.price_thb || 0} THB</p>
                                     </div>
 
-                                    <div className="space-y-2">
+                                    <div className="space-y-2 relative">
                                         <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Recipient Name</label>
-                                        <input
-                                            type="text"
-                                            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary"
-                                            placeholder="e.g. Khun Sarah"
-                                            value={voucherForm.recipientName}
-                                            onChange={(e) => setVoucherForm(prev => ({ ...prev, recipientName: e.target.value }))}
-                                        />
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary placeholder:text-gray-300 pr-10"
+                                                placeholder="Select or type member name..."
+                                                value={voucherForm.recipientName}
+                                                onFocus={() => setIsMemberSearchOpen(true)}
+                                                onBlur={() => setTimeout(() => setIsMemberSearchOpen(false), 200)}
+                                                onChange={(e) => {
+                                                    setVoucherForm(prev => ({ ...prev, recipientName: e.target.value, clientId: undefined }))
+                                                    setIsMemberSearchOpen(true)
+                                                }}
+                                            />
+
+                                            {/* Status Icon */}
+                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                                                {voucherForm.clientId ? (
+                                                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                                                ) : (
+                                                    <ChevronDown className="w-5 h-5 text-gray-400" />
+                                                )}
+                                            </div>
+
+                                            {/* Member Suggestions Dropdown */}
+                                            {isMemberSearchOpen && (
+                                                <div className="absolute top-full left-0 w-full bg-white mt-1 rounded-xl shadow-xl border border-gray-100 z-50 max-h-60 overflow-y-auto">
+                                                    {clients
+                                                        .filter(c => c.name.toLowerCase().includes(voucherForm.recipientName.toLowerCase()))
+                                                        .slice(0, 100)
+                                                        .map(client => (
+                                                            <div
+                                                                key={client.id}
+                                                                className="p-3 hover:bg-gray-50 cursor-pointer flex justify-between items-center border-b border-gray-50 last:border-0 text-black transition-colors"
+                                                                onClick={() => setVoucherForm(prev => ({ ...prev, recipientName: client.name, clientId: client.id }))}
+                                                            >
+                                                                <div className="flex flex-col">
+                                                                    <span className="font-bold text-sm text-gray-900">{client.name}</span>
+                                                                    <span className="text-[10px] text-gray-500">{client.email}</span>
+                                                                </div>
+                                                                <div className="text-[10px] font-mono text-gray-400 bg-gray-100 px-2 py-1 rounded">
+                                                                    {client.phone || "-"}
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    }
+                                                    {clients.length === 0 && (
+                                                        <div className="p-4 text-center text-xs text-gray-400 italic">No members found. Sync from history?</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Validity Period</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <select
+                                                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary"
+                                                value={voucherForm.validityPeriod}
+                                                onChange={(e) => setVoucherForm(prev => ({ ...prev, validityPeriod: e.target.value }))}
+                                            >
+                                                <option value="1M">1 Month</option>
+                                                <option value="3M">3 Months (Standard)</option>
+                                                <option value="6M">6 Months</option>
+                                                <option value="1Y">1 Year</option>
+                                                <option value="CUSTOM">Specific Date</option>
+                                            </select>
+                                            {voucherForm.validityPeriod === "CUSTOM" && (
+                                                <input
+                                                    type="date"
+                                                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary"
+                                                    value={voucherForm.customExpiration}
+                                                    onChange={(e) => setVoucherForm(prev => ({ ...prev, customExpiration: e.target.value }))}
+                                                />
+                                            )}
+                                        </div>
                                     </div>
 
                                     <Button onClick={generateVoucher} className="w-full py-6 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm uppercase tracking-widest">
@@ -720,8 +876,9 @@ export default function AdminDashboard() {
                                                 </div>
                                             </div>
 
-                                            <div className="absolute bottom-6 text-center">
-                                                <p className="text-[9px] italic text-stone-400">Valid for {generatedVoucher.recipientName}</p>
+                                            <div className="absolute bottom-6 text-center text-stone-400">
+                                                <p className="text-[9px] italic">Valid for {generatedVoucher.recipientName}</p>
+                                                <p className="text-[8px] uppercase tracking-widest mt-1">Expires: {generatedVoucher.expiresAt ? new Date(generatedVoucher.expiresAt).toLocaleDateString() : "N/A"}</p>
                                             </div>
                                         </div>
                                         <div className="text-center mt-4">
@@ -750,9 +907,24 @@ export default function AdminDashboard() {
                                                         <div className="text-[10px] text-foreground/40">For {v.recipientName} • ฿{v.pricePaid.toLocaleString()}</div>
                                                     </td>
                                                     <td className="p-4">
-                                                        <span className={`px-2 py-1 rounded text-[9px] uppercase font-bold tracking-wider ${v.status === 'ISSUED' ? 'bg-emerald-100 text-emerald-600' : v.status === 'REDEEMED' ? 'bg-gray-100 text-gray-400' : 'bg-red-100 text-red-500'}`}>
-                                                            {v.status}
-                                                        </span>
+                                                        {(() => {
+                                                            const isExpired = v.expiresAt && new Date() > new Date(v.expiresAt) && v.status === "ISSUED"
+                                                            const displayStatus = isExpired ? "EXPIRED" : v.status
+                                                            const statusStyle = displayStatus === 'ISSUED' ? 'bg-emerald-100 text-emerald-600' :
+                                                                displayStatus === 'REDEEMED' ? 'bg-gray-100 text-gray-400' :
+                                                                    'bg-red-100 text-red-500' // EXPIRED or VOID
+
+                                                            return (
+                                                                <div className="flex flex-col items-start gap-1">
+                                                                    <span className={`px-2 py-1 rounded text-[9px] uppercase font-bold tracking-wider ${statusStyle}`}>
+                                                                        {displayStatus}
+                                                                    </span>
+                                                                    {v.expiresAt && (
+                                                                        <span className="text-[9px] text-foreground/30">Exp: {new Date(v.expiresAt).toLocaleDateString()}</span>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        })()}
                                                     </td>
                                                     <td className="p-4 text-right">
                                                         {v.status === "ISSUED" ? (
@@ -787,8 +959,20 @@ export default function AdminDashboard() {
                                                                 </Button>
                                                             </>
                                                         ) : (
-                                                            <span className="text-foreground/20 text-[10px]">-</span>
+                                                            <span className="text-foreground/20 text-[10px] mr-2">-</span>
                                                         )}
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={async () => {
+                                                                if (confirm("Are you sure you want to delete this voucher? This cannot be undone.")) {
+                                                                    await voucherOps.remove(v.id)
+                                                                }
+                                                            }}
+                                                            className="h-8 w-8 rounded-full text-foreground/20 hover:text-red-500 hover:bg-red-500/10 p-0"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </Button>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -887,11 +1071,22 @@ export default function AdminDashboard() {
                         <div className="w-px h-6 bg-[#9A4E2F]/20 mx-2" />
                         <span className="text-[10px] uppercase tracking-widest font-bold text-[#9A4E2F]/40">
                             {todayBookings
-                                .filter(b => b.status !== "Cancelled" && isBookingInPhase(b.time, getCurrentPhase()))
+                                .filter(b => ["Arrived", "In Ritual", "Checked In", "Started"].includes(b.status) && isBookingInPhase(b.time, getCurrentPhase()))
                                 .reduce((acc, b) => acc + (b.guests || 1), 0)} Guests
                         </span>
                     </div>
                 </div>
+
+                {/* Daily Closing Modal */}
+                <AnimatePresence>
+                    {showDailyClosing && (
+                        <DailyClosingModal
+                            date={new Date().toISOString().split('T')[0]}
+                            bookings={bookings}
+                            onClose={() => setShowDailyClosing(false)}
+                        />
+                    )}
+                </AnimatePresence>
 
             </Container >
             <div className="lg:hidden h-screen flex items-center justify-center p-8 text-center bg-background">
@@ -933,44 +1128,58 @@ export default function AdminDashboard() {
                 {tempVoucher && (
                     <div
                         ref={ticketRef}
-                        className="w-[800px] h-[450px] relative overflow-hidden flex flex-col items-center justify-center p-16 font-sans shrink-0"
-                        style={{ backgroundColor: "#F5F2F0", color: "#292524" }}
+                        className="w-[800px] h-[450px] relative overflow-hidden flex flex-col items-center justify-between p-12 shrink-0"
+                        style={{ backgroundColor: "#051818", color: "#EAEAEA", fontFamily: "serif" }}
                     >
-                        {/* Noise Texture */}
-                        <div className="absolute inset-0 opacity-[0.05] pointer-events-none mix-blend-multiply" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}></div>
+                        {/* Gold Border Frame */}
+                        <div className="absolute inset-4 border border-[#D1C09B] opacity-30 pointer-events-none" />
+                        <div className="absolute inset-5 border border-[#D1C09B] opacity-10 pointer-events-none" />
 
-                        {/* Top Gradient */}
-                        <div className="absolute top-0 w-full h-4" style={{ background: "linear-gradient(to right, #d6d3d1, #f5f5f4, #d6d3d1)" }} />
-
-                        {/* Branding */}
-                        <div className="text-center space-y-4 mb-10 relative z-10">
-                            <p className="text-sm tracking-[0.5em] uppercase font-medium" style={{ color: "#78716c" }}>Yarey Wellness</p>
-                            <h3 className="text-5xl font-serif tracking-tight" style={{ color: "#292524" }}>{tempVoucher.treatmentTitle}</h3>
+                        {/* Top Branding */}
+                        <div className="text-center w-full pt-4 relative z-10">
+                            <p className="text-[10px] tracking-[0.6em] uppercase font-bold" style={{ color: "#D1C09B" }}>Gift Certificate</p>
+                            <div className="w-12 h-px bg-[#D1C09B] mx-auto mt-4 opacity-50" />
                         </div>
 
-                        {/* Details Box */}
-                        <div className="px-12 py-6 rounded-2xl flex items-center gap-10 shadow-sm relative z-10 min-w-[500px] justify-between" style={{ backgroundColor: "#ffffff", borderColor: "#d6d3d1", borderWidth: "1px", borderStyle: "dashed" }}>
-                            <div className="text-center flex-1">
-                                <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "#a8a29e" }}>Voucher Code</p>
-                                <p className="font-mono text-3xl font-bold tracking-wider h-auto" style={{ color: "#292524" }}>{tempVoucher.code}</p>
+                        {/* Center Content */}
+                        <div className="text-center space-y-2 relative z-10">
+                            <p className="text-base tracking-[0.2em] uppercase opacity-60 font-sans" style={{ color: "#fff" }}>Yarey Wellness</p>
+                            <h3 className="text-5xl font-serif tracking-wide text-white drop-shadow-lg leading-tight" style={{ textShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
+                                {tempVoucher.treatmentTitle}
+                            </h3>
+                        </div>
+
+                        {/* Details Box (Gold & Dark) */}
+                        <div className="w-[600px] flex items-center justify-between bg-[#082221] border border-[#D1C09B] px-10 py-6 relative z-10 shadow-2xl">
+                            {/* Decorative Corners for Box */}
+                            <div className="absolute top-0 left-0 w-2 h-2 border-l border-t border-[#D1C09B]" />
+                            <div className="absolute top-0 right-0 w-2 h-2 border-r border-t border-[#D1C09B]" />
+                            <div className="absolute bottom-0 left-0 w-2 h-2 border-l border-b border-[#D1C09B]" />
+                            <div className="absolute bottom-0 right-0 w-2 h-2 border-r border-b border-[#D1C09B]" />
+
+                            <div className="text-left">
+                                <p className="text-[8px] uppercase tracking-[0.2em] mb-1 font-sans" style={{ color: "#D1C09B" }}>Voucher Code</p>
+                                <p className="font-mono text-3xl font-bold tracking-widest text-white">{tempVoucher.code}</p>
                             </div>
-                            <div className="h-10 w-px" style={{ backgroundColor: "#e7e5e4" }} />
-                            <div className="text-center flex-1">
-                                <p className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "#a8a29e" }}>Value</p>
-                                <p className="font-serif text-3xl" style={{ color: "#8B4513" }}>{tempVoucher.pricePaid.toLocaleString()}.-</p>
+
+                            <div className="h-10 w-px bg-[#D1C09B] opacity-20" />
+
+                            <div className="text-right">
+                                <p className="text-[8px] uppercase tracking-[0.2em] mb-1 font-sans" style={{ color: "#D1C09B" }}>Value</p>
+                                <p className="font-serif text-3xl font-medium text-[#D1C09B]">฿{tempVoucher.pricePaid.toLocaleString()}</p>
                             </div>
                         </div>
 
                         {/* Footer */}
-                        <div className="absolute bottom-10 text-center w-full">
-                            <p className="text-xs italic" style={{ color: "#a8a29e" }}>Valid for {tempVoucher.recipientName}</p>
+                        <div className="text-center w-full pb-2 relative z-10 opacity-60 font-sans">
+                            <p className="text-[10px] tracking-wider uppercase mb-1">Presented to</p>
+                            <p className="text-lg font-serif italic text-white mb-2">{tempVoucher.recipientName}</p>
+                            <div className="flex justify-center gap-4 text-[9px] uppercase tracking-widest text-[#D1C09B]">
+                                <span>Expires: {tempVoucher.expiresAt ? new Date(tempVoucher.expiresAt).toLocaleDateString() : "Never"}</span>
+                                <span>•</span>
+                                <span>Sanctuary Phuket</span>
+                            </div>
                         </div>
-
-                        {/* Decorative Corners */}
-                        <div className="absolute top-8 left-8 w-4 h-4 border-l border-t" style={{ borderColor: "rgba(214, 211, 209, 0.5)" }}></div>
-                        <div className="absolute top-8 right-8 w-4 h-4 border-r border-t" style={{ borderColor: "rgba(214, 211, 209, 0.5)" }}></div>
-                        <div className="absolute bottom-8 left-8 w-4 h-4 border-l border-b" style={{ borderColor: "rgba(214, 211, 209, 0.5)" }}></div>
-                        <div className="absolute bottom-8 right-8 w-4 h-4 border-r border-b" style={{ borderColor: "rgba(214, 211, 209, 0.5)" }}></div>
                     </div>
                 )}
             </div>
