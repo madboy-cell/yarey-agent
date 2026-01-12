@@ -1,7 +1,7 @@
 
 import { motion } from "framer-motion"
 import { CheckSquare, Play, LogOut, MessageCircle, Clock } from "lucide-react"
-import { Booking } from "@/app/admin/page"
+import { Booking } from "@/types"
 
 export interface BookingProps {
     booking: any

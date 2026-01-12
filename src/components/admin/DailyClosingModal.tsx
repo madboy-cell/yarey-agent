@@ -1,8 +1,8 @@
 import { useState, useMemo } from "react"
 import { motion } from "framer-motion"
-import { X, Copy, Check, DollarSign, Receipt, CreditCard, Banknote, Users } from "lucide-react"
+import { X, Copy, Check, DollarSign, Receipt, CreditCard, Banknote, Users, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Booking } from "@/app/admin/page"
+import { Booking } from "@/types"
 
 interface DailyClosingModalProps {
     date: string // YYYY-MM-DD

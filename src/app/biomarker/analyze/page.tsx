@@ -1,14 +1,85 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, Activity } from "lucide-react";
+import { Loader2, CheckCircle2, Activity, Hand, Thermometer, Droplet, GlassWater, Sun, X, ChevronRight, Info } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 export default function AnalyzingPage() {
     const [status, setStatus] = useState("Connecting to Neural Lattice...");
     const [result, setResult] = useState<any>(null);
+    const [score, setScore] = useState<number>(0);
+    const [protocol, setProtocol] = useState<any>(null);
+    const [saving, setSaving] = useState(false);
+    const [selectedItem, setSelectedItem] = useState<any>(null);
+
+    // Health Score Algorithm
+    const calculateHealthScore = (metrics: any) => {
+        // HRV: 20-100 range -> 0-100 pts
+        const hrvScore = Math.min(100, Math.max(0, (metrics.hrv - 20) * 1.25));
+
+        // RHR: 90-40 range (lower is better)
+        const rhrScore = Math.min(100, Math.max(0, (90 - metrics.rhr) * 2));
+
+        // Deep Sleep: 30-120 mins -> 0-100 pts
+        const sleepScore = Math.min(100, Math.max(0, (metrics.deepSleep - 30) * 1.1));
+
+        return Math.round((hrvScore * 0.4) + (rhrScore * 0.3) + (sleepScore * 0.3));
+    }
+
+    // Dynamic Protocol Generator
+    const generateProtocol = (metrics: any, pillarName: string) => {
+        const isLowHRV = metrics.hrv < 40;
+        const isHighStress = metrics.rhr > 75;
+        const isPoorSleep = metrics.deepSleep < 60;
+
+        return [
+            {
+                id: 'massage',
+                category: 'Manual Therapy',
+                icon: Hand,
+                title: pillarName === "Nervous System" ? "Vagus Nerve Release" :
+                    pillarName === "Physical Repair" ? "Deep Tissue & Percussion" : "Lymphatic Drainage",
+                detail: isHighStress ? "Focus on Cranial-Sacral hold to downregulate sympathetic drive." : "Targeted myofascial release for structural alignment.",
+                benefits: ["Systemic Release", "Fascial Unwinding", "Structural Balance"]
+            },
+            {
+                id: 'contrast',
+                category: 'Contrast Therapy',
+                icon: Thermometer,
+                title: isLowHRV ? "Soft Restore" : "Viking Protocol",
+                tag: isLowHRV ? "Low Intensity" : "High Intensity",
+                tagColor: isLowHRV ? "emerald" : "red",
+                detail: isLowHRV ? "15m Sauna (60°C) → 2m Cool Air → Rest" : "15m Sauna (90°C) → 3m Ice Bath (5°C) → Repeat 3x",
+                benefits: isLowHRV ? ["Gently Boosts Circulation", "Parasympathetic Safety"] : ["Hormetic Stress Response", "Dopamine Spike"]
+            },
+            {
+                id: 'iv',
+                category: 'IV Prescription',
+                icon: Droplet,
+                title: isPoorSleep ? "Deep Sleep Infusion" : isHighStress ? "Neuro-Calm" : "Mito-Charge",
+                detail: isPoorSleep ? "Magnesium, Glycine, Zinc" : isHighStress ? "B-Complex, Taurine, Vit-C" : "NAD+, Glutathione",
+                benefits: ["100% Bioavailability", "Cellular Hydration", "Rapid Repletion"]
+            },
+            {
+                id: 'elixir',
+                category: 'Botanical Elixir',
+                icon: GlassWater,
+                title: isHighStress ? "The Grounding" : "The Clarity",
+                detail: isHighStress ? "Celery, Green Apple, Ashwagandha" : "Beetroot, Ginger, Lion's Mane",
+                benefits: ["Gut-Brain Axis", "Adaptogenic Support", "Raw Enzymes"]
+            },
+            {
+                id: 'lifestyle',
+                category: 'Lifestyle',
+                icon: Sun,
+                title: isPoorSleep ? "Sleep Hygiene" : "Circadian Reset",
+                detail: isPoorSleep ? "Complete digital blackout 90m before bed. Take Magnesium Glycinate." : "View morning sunlight for 10m within 30m of waking.",
+                benefits: ["Habit Stacking", "Long-term Adherence", "Bio-Rhythm Sync"]
+            }
+        ];
+    }
 
     useEffect(() => {
         if (result) return; // Stop the cycle if we have a result
@@ -71,8 +142,38 @@ export default function AnalyzingPage() {
 
                 const data = await res.json();
                 if (data.success) {
+                    const finalMetrics = mockMetrics || data.result.metrics.current;
+                    const calculatedScore = calculateHealthScore(finalMetrics);
+                    const generatedProtocol = generateProtocol(finalMetrics, data.result.pillarName);
+
                     setResult(data.result);
-                    setStatus(`Assigned Pillar: ${data.result.pillarName}`);
+                    setScore(calculatedScore);
+                    setProtocol(generatedProtocol);
+                    setStatus(`Analysis Complete. Health Score: ${calculatedScore}`);
+
+                    // Save to History (if member exists)
+                    const email = localStorage.getItem("yarey_member_email");
+                    if (email) {
+                        try {
+                            const { collection, addDoc, serverTimestamp } = await import("firebase/firestore");
+                            const { db } = await import("@/lib/firebase");
+
+                            // Sanitize protocol to remove React Components (icons) which cause Firestore crash
+                            const sanitizedProtocol = generatedProtocol.map(({ icon, ...rest }: any) => rest);
+
+                            await addDoc(collection(db, "biomarker_logs"), {
+                                email,
+                                score: calculatedScore,
+                                metrics: finalMetrics,
+                                pillar: data.result.pillarName,
+                                protocol: sanitizedProtocol,
+                                timestamp: serverTimestamp()
+                            });
+                            console.log("Biomarker history saved.");
+                        } catch (err) {
+                            console.error("Failed to save history", err);
+                        }
+                    }
                 }
             } catch (e) {
                 console.error(e);
@@ -85,68 +186,17 @@ export default function AnalyzingPage() {
         return () => clearInterval(interval);
     }, [result]);
 
-    // Pillar Details Mapping
-    const PILLAR_DETAILS = {
-        1: {
-            // NERVOUS SYSTEM
-            protocol: "Vagus Nerve Stimulation",
-            desc: "A targeted manual therapy focusing on the Sternocleidomastoid and Suboccipital muscles. This protocol uses gentle compression and release techniques to stimulating the vagus nerve, signaling the parasympathetic nervous system to lower heart rate and reduce cortisol.",
-            benefits: ["Lowers Cortisol", "Increases HRV", "Reduces Anxiety"],
-            rotavap: "Velvet Night",
-            rotavapDesc: "A potent nervous system downregulator. Lavender hydrosol provides linalool for anxiolytic effects, while Magnesium Glycinate directly relaxes neuromuscular tension.",
-            rotavapBenefits: ["Anxiolytic", "Muscle Relaxant", "Sleep Primer"],
-            ingredients: ["Lavender Hydrosol", "Mg Glycinate", "Tart Cherry"]
-        },
-        2: {
-            // PHYSICAL REPAIR
-            protocol: "Deep Tissue Reconstruction",
-            desc: "Focuses on mobilizing lactic acid and breaking down fascial adhesions. We utilize percussive therapy combined with firm myofascial release to increase blood flow to fatigued muscle groups, accelerating the removal of metabolic waste products.",
-            benefits: ["Accelerates Recovery", "Reduces Inflammation", "Restores Mobility"],
-            rotavap: "Iron Root",
-            rotavapDesc: "A powerful systemic anti-inflammatory. Curcumin from Turmeric and Gingerol from Ginger work synergistically to suppress pro-inflammatory cytokines, reducing soreness and joint pain.",
-            rotavapBenefits: ["Anti-Inflammatory", "Pain Relief", "Gut Health"],
-            ingredients: ["Turmeric Extract", "Ginger Root", "Black Pepper"]
-        },
-        3: {
-            // RESILIENCE
-            protocol: "Contrast Therapy Cycle",
-            desc: "A rigorous cycle of thermal stress. You will move between the 90°C sauna and 5°C cold plunge in a 3:1 ratio. This vascular pumping action strengthens the endothelial lining of your blood vessels and conditions your autonomic nervous system.",
-            benefits: ["Vascular Strength", "Immune Boost", "Mental Fortitude"],
-            rotavap: "Clear Sky",
-            rotavapDesc: "Designed to support cognitive clarity during stress. L-Theanine promotes alpha-wave production, creating a state of 'relaxed alertness' without caffeine jitters.",
-            rotavapBenefits: ["Cognitive Boost", "Stress Reduction", "Alpha Waves"],
-            ingredients: ["Lemon Balm", "L-Theanine", "Green Tea"]
-        },
-        4: {
-            // RESPIRATORY
-            protocol: "Diaphragmatic Release",
-            desc: "Targets the intercostal muscles and the diaphragm itself. Through manual rib-cage mobilization and guided breathwork retention (hypoxia training), we expand lung capacity and improve CO2 tolerance for deeper oxygenation.",
-            benefits: ["Lung Expansion", "CO2 Tolerance", "Oxygen Uptake"],
-            rotavap: "Open Air",
-            rotavapDesc: "A bronchodilatory blend. Menthol from Peppermint and saponins from Mullein help clear mucus pathways and soothe the respiratory tract for easier breathing.",
-            rotavapBenefits: ["Bronchodilation", "Mucus Clearance", "O2 Transport"],
-            ingredients: ["Eucalyptus", "Peppermint", "Mullein"]
-        },
-        5: {
-            // CIRCADIAN
-            protocol: "Circadian Reset",
-            desc: "Uses specific wavelengths of light therapy in conjunction with a magnesium transdermal application. This protocol is designed to suppress melatonin during the 'biological day' or promote it during the 'biological night', resetting your internal clock.",
-            benefits: ["Sleep Onset", "REM Quality", "Morning Energy"],
-            rotavap: "Deep Ocean",
-            rotavapDesc: "A complete sleep-architecture optimizier. Apigenin from Chamomile binds to benzodiazepine receptors to induce sedation without grogginess.",
-            rotavapBenefits: ["Sedation", "Sleep Architecture", "Deep Rest"],
-            ingredients: ["Chamomile", "Reishi Spore", "Glycine"]
-        }
-    };
 
-    const details = result ? PILLAR_DETAILS[result.pillarId as keyof typeof PILLAR_DETAILS] : null;
+
+
+
 
     return (
-        <main className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <main className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-6 relative overflow-hidden" >
             <div className="fixed inset-0 noise z-0 pointer-events-none opacity-[0.03]" />
 
             {/* Pulse Effect - Change color on success */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none" >
                 <motion.div
                     animate={{
                         scale: result ? [1, 1.05, 1] : [1, 1.2, 1],
@@ -155,7 +205,7 @@ export default function AnalyzingPage() {
                     transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
                     className={`w-[500px] h-[500px] rounded-full blur-[100px] ${result ? 'bg-emerald-500/10' : 'bg-primary/20'}`}
                 />
-            </div>
+            </div >
 
             <div className="z-10 w-full max-w-md space-y-8">
 
@@ -188,90 +238,124 @@ export default function AnalyzingPage() {
                             <p className="text-xs text-muted-foreground uppercase tracking-widest font-mono">Assigned Pillar</p>
                         </div>
 
-                        <div className="space-y-8">
-                            <div className="p-6 bg-primary/5 rounded-xl border border-primary/10">
-                                <label className="text-[10px] text-primary/60 uppercase tracking-widest font-bold mb-3 block flex items-center gap-2">
-                                    <Activity className="w-3 h-3" /> Clinical Rationale
-                                </label>
-                                <p className="text-lg font-light leading-relaxed text-foreground/90 font-serif">
-                                    "{result.trigger}"
-                                </p>
-                                <p className="text-sm text-muted-foreground mt-2">
-                                    Based on your 14-day history, your body would benefit most from the <strong>{details?.protocol}</strong> protocol.
-                                </p>
-                            </div>
-
-                            {/* Measured Metrics Snapshot */}
-                            <div className="grid grid-cols-4 gap-4 pb-6">
-                                <div className="bg-white/50 p-4 rounded-xl border border-white shadow-sm text-center backdrop-blur-sm">
-                                    <div className="text-[9px] text-muted-foreground uppercase tracking-widest mb-1">HRV</div>
-                                    <div className="text-2xl font-light text-foreground">{Math.round(result.metrics.current.hrv)} <span className="text-[10px] text-muted-foreground font-bold">ms</span></div>
-                                </div>
-                                <div className="bg-white/50 p-4 rounded-xl border border-white shadow-sm text-center backdrop-blur-sm">
-                                    <div className="text-[9px] text-muted-foreground uppercase tracking-widest mb-1">RHR</div>
-                                    <div className="text-2xl font-light text-foreground">{Math.round(result.metrics.current.rhr)} <span className="text-[10px] text-muted-foreground font-bold">bpm</span></div>
-                                </div>
-                                <div className="bg-white/50 p-4 rounded-xl border border-white shadow-sm text-center backdrop-blur-sm">
-                                    <div className="text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Deep Sleep</div>
-                                    <div className="text-2xl font-light text-foreground">{Math.round(result.metrics.current.deepSleep)} <span className="text-[10px] text-muted-foreground font-bold">min</span></div>
-                                </div>
-                                <div className="bg-white/50 p-4 rounded-xl border border-white shadow-sm text-center backdrop-blur-sm">
-                                    <div className="text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Resp</div>
-                                    <div className="text-2xl font-light text-foreground">{result.metrics.current.respRate.toFixed(1)} <span className="text-[10px] text-muted-foreground font-bold">/m</span></div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-border/20 pt-8">
-                                {/* Treatment Protocol */}
-                                <div className="space-y-4">
-                                    <div className="flex flex-col h-full">
-                                        <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold block mb-4">Manual Therapy Protocol</label>
-                                        <h3 className="text-2xl font-serif text-foreground mb-3">{details?.protocol}</h3>
-                                        <p className="text-sm text-muted-foreground leading-relaxed mb-6 flex-grow">{details?.desc}</p>
-
-                                        <div className="flex flex-wrap gap-2">
-                                            {details?.benefits.map((benefit: string) => (
-                                                <span key={benefit} className="text-[10px] px-3 py-1.5 bg-background border border-border rounded-full font-bold uppercase tracking-wider text-foreground/60">{benefit}</span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Pharmacology */}
-                                <div className="space-y-4 md:border-l md:border-border/20 md:pl-8">
-                                    <div className="flex flex-col h-full">
-                                        <label className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold block mb-4">Prescribed Rotavap Extraction</label>
-                                        <h3 className="text-2xl font-serif text-primary mb-3">"{details?.rotavap}"</h3>
-                                        <p className="text-sm text-muted-foreground leading-relaxed mb-6 flex-grow">{details?.rotavapDesc}</p>
-
-                                        <div className="space-y-3">
-                                            <div className="flex flex-wrap gap-2">
-                                                {details?.rotavapBenefits?.map((benefit: string) => (
-                                                    <span key={benefit} className="text-[10px] px-3 py-1.5 bg-primary/5 text-primary border border-primary/10 rounded-full font-bold uppercase tracking-wider">{benefit}</span>
-                                                ))}
-                                            </div>
-                                            <div className="flex flex-wrap gap-1 opacity-60">
-                                                {details?.ingredients.map((ing: string, i: number) => (
-                                                    <span key={ing} className="text-[10px] font-mono text-muted-foreground">{ing}{i < details.ingredients.length - 1 ? " • " : ""}</span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                        {/* Health Score Banner */}
+                        <div className="bg-[#0c2627] border border-[#D1C09B]/30 p-8 rounded-2xl text-center relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#D1C09B] to-transparent opacity-50"></div>
+                            <h2 className="text-[#D1C09B] font-serif text-xl mb-2">Overall Health Score</h2>
+                            <div className="text-6xl font-light text-white mb-2">{score} <span className="text-xl text-white/40">/ 100</span></div>
+                            <div className="text-xs text-white/60 uppercase tracking-widest">Calculated from HRV, RHR & Sleep</div>
                         </div>
 
+                        {/* 5-Dimensional Protocol Grid - Responsive Horizontal Scroll */}
+                        <div className="flex overflow-x-auto pb-8 snap-x snap-mandatory gap-4 -mx-6 px-6 lg:grid lg:grid-cols-5 lg:overflow-visible lg:pb-0 lg:px-0 lg:mx-0 no-scrollbar">
+                            {protocol && protocol.map((item: any) => (
+                                <div
+                                    key={item.id}
+                                    onClick={() => setSelectedItem(item)}
+                                    className="min-w-[85vw] md:min-w-[320px] lg:min-w-0 snap-center bg-white/5 border border-white/10 p-6 rounded-2xl space-y-4 hover:bg-white/10 transition-all group cursor-pointer active:scale-95"
+                                >
+                                    <div className="flex justify-between items-start">
+                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:scale-110 transition-transform">
+                                            <item.icon className="w-5 h-5" />
+                                        </div>
+                                        <div className="p-1 rounded-full bg-white/5 text-white/40 group-hover:text-white transition-colors">
+                                            <ChevronRight className="w-4 h-4" />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div className="text-[10px] uppercase tracking-widest text-primary/60 font-bold mb-1">{item.category}</div>
+                                        <div className="text-xl font-serif text-white leading-tight min-h-[3.5rem] flex items-center">{item.title}</div>
+                                    </div>
+
+                                    {item.tag && (
+                                        <span className={`inline-block text-[9px] px-2 py-1 rounded-full border uppercase tracking-wider font-bold ${item.tagColor === 'red' ? 'border-red-500 text-red-300 bg-red-500/10' : 'border-emerald-500 text-emerald-300 bg-emerald-500/10'}`}>
+                                            {item.tag}
+                                        </span>
+                                    )}
+
+                                    <div className="text-xs text-white/50 leading-relaxed border-t border-white/5 pt-4">
+                                        {item.detail}
+                                    </div>
+                                    <div className="text-[10px] text-primary/40 font-bold uppercase tracking-widest pt-2">Tap for Details</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* DETAIL MODAL OVERLAY */}
+                        <AnimatePresence>
+                            {selectedItem && (
+                                <motion.div
+                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                    className="fixed inset-0 z-50 bg-[#051818]/95 backdrop-blur-xl flex items-center justify-center p-6"
+                                    onClick={() => setSelectedItem(null)}
+                                >
+                                    <motion.div
+                                        initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+                                        className="w-full max-w-lg bg-[#0c2627] border border-[#D1C09B]/20 rounded-3xl p-8 relative shadow-2xl overflow-hidden"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <button
+                                            onClick={() => setSelectedItem(null)}
+                                            className="absolute top-4 right-4 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 transition-colors"
+                                        >
+                                            <X className="w-5 h-5" />
+                                        </button>
+
+                                        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-6 mx-auto">
+                                            <selectedItem.icon className="w-8 h-8" />
+                                        </div>
+
+                                        <div className="text-center space-y-2 mb-8">
+                                            <div className="text-xs uppercase tracking-[0.2em] text-primary/60 font-bold">{selectedItem.category}</div>
+                                            <h3 className="text-3xl font-serif text-white">{selectedItem.title}</h3>
+                                        </div>
+
+                                        <div className="space-y-6">
+                                            <div className="bg-white/5 p-6 rounded-xl border border-white/5">
+                                                <div className="flex items-center gap-2 text-xs text-white/40 uppercase tracking-widest font-bold mb-3">
+                                                    <Info className="w-3 h-3" /> Prescription
+                                                </div>
+                                                <p className="text-lg font-light text-white/90 leading-relaxed">
+                                                    {selectedItem.detail}
+                                                </p>
+                                            </div>
+
+                                            <div>
+                                                <div className="text-xs text-white/40 uppercase tracking-widest font-bold mb-3">Therapeutic Benefits</div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {selectedItem.benefits.map((benefit: string) => (
+                                                        <span key={benefit} className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-white/70">
+                                                            {benefit}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-8 pt-6 border-t border-white/5 text-center">
+                                            <p className="text-[10px] text-white/30 uppercase tracking-widest max-w-xs mx-auto">
+                                                This recommendation is dynamically tailored to your biological data.
+                                            </p>
+                                        </div>
+                                    </motion.div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+
                         <div className="pt-4">
-                            <Link href="/">
-                                <Button className="w-full h-12 rounded-full font-bold tracking-wide" >Return to Sanctuary Home</Button>
+                            <Link href="/members">
+                                <Button className="w-full h-12 rounded-full font-bold tracking-wide" >Return to Member Portal</Button>
                             </Link>
                             <p className="text-[10px] text-center text-muted-foreground mt-4">
                                 Please show this screen to your therapist upon arrival.
                             </p>
                         </div>
                     </motion.div>
-                )}
-            </div>
-        </main>
+                )
+                }
+            </div >
+        </main >
     );
 }

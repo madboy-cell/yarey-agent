@@ -13,60 +13,60 @@ export function VibeMeter() {
     const [activeVibe, setActiveVibe] = useState<VibeStatus>("Quiet")
 
     useEffect(() => {
-        if (!bookings) return
+        const calculateVibe = () => {
+            if (!bookings) return
 
-        const now = new Date()
-        const todayStr = now.toISOString().split('T')[0]
-        const hour = now.getHours()
+            const now = new Date()
+            const todayStr = now.toLocaleDateString("en-CA")
+            const hour = now.getHours()
 
-        // Determine current phase
-        let phase = "Morning"
-        if (hour >= 14 && hour < 17) phase = "Sun Peak"
-        if (hour >= 17) phase = "Evening"
+            // Determine current phase
+            let phase = "Morning"
+            if (hour >= 12 && hour < 17) phase = "Sun Peak"
+            if (hour >= 17) phase = "Evening"
 
-        console.log('[VibeMeter] Current time:', hour, '- Phase:', phase)
-        console.log('[VibeMeter] Today string:', todayStr)
-        console.log('[VibeMeter] Total bookings:', bookings.length)
+            const filtered = bookings.filter((b: any) => {
+                const isToday = b.date === todayStr
+                const isActive = b.status !== "Cancelled"
 
-        const filtered = bookings.filter((b: any) => {
-            const isToday = b.date === "Today" || b.date === todayStr
-            const isActive = b.status !== "Cancelled"
+                // 1. Status Check (Active only)
+                const isActiveStatus = ["Arrived", "In Ritual", "Checked In", "Started"].includes(b.status)
 
-            // 1. Status Check (Active only)
-            const isActiveStatus = ["Arrived", "In Ritual", "Checked In", "Started"].includes(b.status)
+                // 2. Robust Time Parsing (Regex)
+                // Matches 10:00, 10:00 AM, 10:00AM, 14:00
+                const timeMatch = b.time?.match(/(\d+):(\d+)\s*(AM|PM)?/i)
+                if (!timeMatch) return false
 
-            // 2. Phase Check (Lazy Staff Proofing: Ensure booking is for NOW)
-            // Parse booking time to see if It matches current phase. 
-            // This prevents "Morning" guests (who forgot to be marked Complete) from clogging "Sun Peak" count.
-            const [timePart, period] = b.time?.split(" ") || []
-            let bHour = parseInt(timePart?.split(":")[0] || "0")
-            if (period) {
-                if (period.toUpperCase() === "PM" && bHour !== 12) bHour += 12
-                else if (period.toUpperCase() === "AM" && bHour === 12) bHour = 0
+                let bHour = parseInt(timeMatch[1])
+                const period = timeMatch[3]
+
+                if (period) {
+                    if (period.toUpperCase() === "PM" && bHour !== 12) bHour += 12
+                    else if (period.toUpperCase() === "AM" && bHour === 12) bHour = 0
+                }
+
+                let bPhase = "Morning"
+                if (bHour >= 12 && bHour < 17) bPhase = "Sun Peak"
+                else if (bHour >= 17) bPhase = "Evening"
+
+                return isToday && isActiveStatus && (bPhase === phase)
+            })
+
+            const count = filtered.reduce((acc: number, b: any) => acc + (Number(b.guests) || 1), 0)
+            setGuestCount(count)
+
+            if (vibeStatus?.manualVibe) {
+                setActiveVibe(vibeStatus.manualVibe)
+            } else {
+                if (count > 8) setActiveVibe("Lively")
+                else if (count > 3) setActiveVibe("Moderate")
+                else setActiveVibe("Quiet")
             }
-
-            let bPhase = "Morning"
-            if (bHour >= 14 && bHour < 17) bPhase = "Sun Peak" // Sync with Admin Page Logic
-            else if (bHour >= 17) bPhase = "Evening"
-            else bPhase = "Morning"
-
-            return isToday && isActiveStatus && (bPhase === phase)
-        })
-
-        console.log('[VibeMeter] Filtered bookings for', phase, ':', filtered.length)
-
-        const count = filtered.reduce((acc: number, b: any) => acc + (Number(b.guests) || 1), 0)
-        console.log('[VibeMeter] Total guest count:', count)
-
-        setGuestCount(count)
-
-        if (vibeStatus?.manualVibe) {
-            setActiveVibe(vibeStatus.manualVibe)
-        } else {
-            if (count > 8) setActiveVibe("Lively")
-            else if (count > 3) setActiveVibe("Moderate")
-            else setActiveVibe("Quiet")
         }
+
+        calculateVibe() // Initial Run
+        const timer = setInterval(calculateVibe, 60000) // Update every minute
+        return () => clearInterval(timer)
     }, [bookings, vibeStatus])
 
     const getVibeColor = (vibe: VibeStatus) => {

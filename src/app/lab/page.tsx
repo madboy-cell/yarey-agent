@@ -52,6 +52,28 @@ export default function LabPage() {
     }
 
     return (
+        <div className="min-h-screen bg-[#051818] flex items-center justify-center text-center p-6">
+            <Container className="max-w-md">
+                <div className="mx-auto w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center mb-8 animate-pulse">
+                    <FlaskConical className="w-10 h-10 text-primary" />
+                </div>
+                <h1 className="text-4xl md:text-5xl font-serif text-[#D1C09B] mb-6">The Altar</h1>
+                <div className="h-[1px] w-24 bg-primary/30 mx-auto mb-6"></div>
+                <h2 className="text-xl md:text-2xl font-light text-white/80 mb-4 tracking-widest uppercase">Coming Soon</h2>
+                <p className="text-white/50 leading-relaxed font-light">
+                    Our high-precision rotary evaporator laboratory is currently being calibrated for optimal botanical extraction.
+                </p>
+                <div className="mt-12">
+                    <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/10" onClick={() => window.history.back()}>
+                        Return to Sanctuary
+                    </Button>
+                </div>
+            </Container>
+        </div>
+    )
+
+    // Original Interactive Lab (Hidden)
+    return (
         <div className="min-h-screen bg-background py-16">
             <Container className="max-w-2xl text-center">
                 <header className="mb-12">

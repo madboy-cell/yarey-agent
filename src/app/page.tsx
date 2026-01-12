@@ -23,14 +23,40 @@ import {
   CloudFog,
   Minus,
   Menu,
-  X
+  X,
+  Clock
 } from "lucide-react"
 import { useRef, useEffect, useState } from "react"
+import { useFirestoreCollection } from "@/hooks/useFirestore"
+
+interface Treatment {
+  id: string
+  title: string
+  category: string
+  duration_min: number
+  price_thb: number
+  description: string
+  active: boolean
+}
+
+const getIconForCategory = (category: string) => {
+  const c = category.toLowerCase()
+  if (c.includes("massage") || c.includes("body")) return Leaf
+  if (c.includes("facial") || c.includes("face")) return Sparkles
+  if (c.includes("sauna") || c.includes("heat")) return Thermometer
+  if (c.includes("cold") || c.includes("water")) return Droplets
+  if (c.includes("breath") || c.includes("energy")) return Wind
+  return Layers
+}
 
 export default function Home() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isLoaded, setIsLoaded] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
+  // Fetch Menu
+  const { data: treatments } = useFirestoreCollection<Treatment>("treatments")
+  const activeTreatments = treatments.filter(t => t.active)
 
   useEffect(() => {
     setIsLoaded(true)
@@ -74,18 +100,15 @@ export default function Home() {
 
           {/* Links */}
           <div className="hidden md:flex items-center gap-12 text-[10px] font-bold tracking-[0.25em] uppercase text-primary/70">
-            <Link href="/biomarker" className="hover:text-primary hover:text-glow transition-all duration-300 relative group">
-              Biomarker
-              <span className="absolute -bottom-2 left-0 w-0 h-[1px] bg-primary group-hover:w-full transition-all duration-300"></span>
-            </Link>
+
             <a href="#protocols" className="hover:text-primary hover:text-glow transition-all duration-300 relative group">
               Rituals
               <span className="absolute -bottom-2 left-0 w-0 h-[1px] bg-primary group-hover:w-full transition-all duration-300"></span>
             </a>
-            <a href="#lab" className="hover:text-primary hover:text-glow transition-all duration-300 relative group">
+            <Link href="/lab" className="hover:text-primary hover:text-glow transition-all duration-300 relative group">
               The Altar
               <span className="absolute -bottom-2 left-0 w-0 h-[1px] bg-primary group-hover:w-full transition-all duration-300"></span>
-            </a>
+            </Link>
             <Link href="/members" className="hover:text-primary hover:text-glow transition-all duration-300 relative group text-primary/90">
               MEMBERS
               <span className="absolute -bottom-2 left-0 w-0 h-[1px] bg-primary group-hover:w-full transition-all duration-300"></span>
@@ -122,9 +145,9 @@ export default function Home() {
         className="fixed inset-0 z-40 bg-[#051818]/95 backdrop-blur-xl md:hidden flex flex-col items-center justify-center"
       >
         <div className="flex flex-col items-center gap-12 text-sm font-bold tracking-[0.3em] uppercase text-primary">
-          <Link href="/biomarker" onClick={() => setIsMobileMenuOpen(false)}>Biomarker</Link>
+
           <a href="#protocols" onClick={() => setIsMobileMenuOpen(false)}>Rituals</a>
-          <a href="#lab" onClick={() => setIsMobileMenuOpen(false)}>The Altar</a>
+          <Link href="/lab" onClick={() => setIsMobileMenuOpen(false)}>The Altar</Link>
           <Link href="/members" onClick={() => setIsMobileMenuOpen(false)} className="text-white border border-white/20 px-8 py-3 rounded-full">
             Members
           </Link>
@@ -179,47 +202,7 @@ export default function Home() {
                 A deep forest sanctuary for energetic restoration. We weave somatic release, botanical science, and ancient wisdom to realign your frequency.
               </motion.p>
 
-              {/* Biomarker Dashboard - Mystical Edition */}
-              <motion.div
-                id="biomarker"
-                initial={{ opacity: 0, y: 20 }}
-                animate={isLoaded ? { opacity: 1, y: 0 } : {}}
-                transition={{ duration: 1, delay: 0.6 }}
-                className="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-lg"
-              >
-                <div className="p-8 rounded-sm border border-primary/10 bg-secondary/30 backdrop-blur-sm hover:bg-secondary/50 transition-all duration-500 group cursor-crosshair relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-2 opacity-20 group-hover:opacity-100 transition-opacity">
-                    <Sparkles className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="flex items-center gap-3 text-primary mb-3">
-                    <Activity className="w-4 h-4" />
-                    <span className="text-[9px] uppercase tracking-[0.2em] font-bold">Aura</span>
-                  </div>
-                  <span className="text-xl font-serif tracking-wide text-foreground group-hover:text-glow transition-all">Radiant</span>
-                </div>
 
-                <div className="p-8 rounded-sm border border-primary/10 bg-background/50 backdrop-blur-sm hover:bg-background/80 transition-all duration-500 group cursor-crosshair relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-2 opacity-20 group-hover:opacity-100 transition-opacity">
-                    <Mountain className="w-4 h-4 text-accent" />
-                  </div>
-                  <div className="flex items-center gap-3 text-accent mb-3">
-                    <Leaf className="w-4 h-4" />
-                    <span className="text-[9px] uppercase tracking-[0.2em] font-bold">Root</span>
-                  </div>
-                  <span className="text-xl font-serif tracking-wide text-foreground group-hover:text-accent transition-all">Grounded</span>
-                </div>
-
-                <div className="p-8 rounded-sm border border-primary/10 bg-secondary/30 backdrop-blur-sm hover:bg-secondary/50 transition-all duration-500 group cursor-crosshair hidden md:block relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-2 opacity-20 group-hover:opacity-100 transition-opacity">
-                    <Wind className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="flex items-center gap-3 text-primary/80 mb-3">
-                    <Waves className="w-4 h-4 animate-pulse" />
-                    <span className="text-[9px] uppercase tracking-[0.2em] font-bold">Ether</span>
-                  </div>
-                  <span className="text-xl font-serif tracking-wide text-foreground group-hover:text-glow transition-all">Flowing</span>
-                </div>
-              </motion.div>
             </div>
 
             <motion.div
@@ -258,80 +241,7 @@ export default function Home() {
         <div className="absolute bottom-0 left-0 w-full h-48 bg-gradient-to-t from-background to-transparent pointer-events-none z-10"></div>
       </section>
 
-      {/* The Lab (Altar) Section */}
-      <section id="lab" className="py-32 px-6 bg-secondary/20 border-y border-primary/5 relative overflow-hidden">
-        {/* Background Particles */}
-        <div className="absolute inset-0 opacity-10 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay"></div>
 
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-24 items-center relative z-10">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            transition={{ duration: 1 }}
-            className="order-2 lg:order-1 relative"
-          >
-            <div className="aspect-square bg-background/50 backdrop-blur-md rounded-full border border-primary/20 p-12 flex items-center justify-center relative shadow-[0_0_50px_rgba(4,42,64,0.5)]">
-              {/* Rotating Rings */}
-              <div className="absolute inset-0 border border-dashed border-primary/30 rounded-full animate-[spin_20s_linear_infinite]"></div>
-              <div className="absolute inset-4 border border-dotted border-primary/20 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
-
-              <Image
-                src="/lab-equipment.png"
-                alt="Altar Elements"
-                fill
-                className="rounded-full object-cover p-12 opacity-90"
-              />
-
-              {/* Floating Label */}
-              <div className="absolute -bottom-6 -right-6 glass-card p-6 rounded-sm shadow-2xl max-w-[220px] border border-primary/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shadow-[0_0_10px_#D1C09B]"></span>
-                  <span className="text-[9px] font-bold uppercase opacity-80 tracking-[0.2em] text-primary">Sacred Tools</span>
-                </div>
-                <span className="text-sm font-serif italic text-foreground leading-tight block">Crystalline Rotary Evaporator <br />R-300</span>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: 50 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 1 }}
-            className="order-1 lg:order-2"
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <FlaskConical className="w-5 h-5 text-primary" />
-              <span className="text-[10px] font-bold tracking-[0.4em] text-primary uppercase">The Altar</span>
-            </div>
-
-            <h2 className="text-5xl lg:text-7xl font-serif text-foreground mb-8 leading-none">
-              Alchemy of <br />
-              <span className="text-primary italic">Nature.</span>
-            </h2>
-
-            <p className="text-foreground/70 text-lg font-light leading-relaxed mb-10 max-w-lg border-l border-primary/20 pl-6">
-              Our extraction altar combines high-precision technology with sacred intention. We distill potent botanical essences to create elixirs that resonate with your cellular frequency.
-            </p>
-
-            <div className="grid grid-cols-2 gap-8">
-              <div>
-                <h3 className="text-xl font-serif text-primary mb-2">Bio-Active</h3>
-                <p className="text-sm text-foreground/60 leading-relaxed font-sans">
-                  Maximum potency extraction retains the vibration of the living plant.
-                </p>
-              </div>
-              <div>
-                <h3 className="text-xl font-serif text-primary mb-2">Resonance</h3>
-                <p className="text-sm text-foreground/60 leading-relaxed font-sans">
-                  Frequencies tuned to restore harmonic balance in the body.
-                </p>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      </section>
 
       {/* Protocols (Rituals) Section */}
       <section id="protocols" className="py-32 px-6 relative bg-background">
@@ -355,56 +265,52 @@ export default function Home() {
           </motion.div>
 
           <div className="grid md:grid-cols-3 gap-8">
-            {[
-              {
-                title: "The Botanical Deep",
-                desc: "Full body massage with warm herbal compresses and bio-identical oils.",
-                icon: Leaf,
-                color: "text-primary",
-                border: "border-primary/20"
-              },
-              {
-                title: "The Contrast Loop",
-                desc: "Guided thermal cycle: Sauna (Heat), Plunge (Cold), Rest (Integration).",
-                icon: Thermometer,
-                color: "text-accent",
-                border: "border-accent/20"
-              },
-              {
-                title: "Create Your Flow",
-                desc: "Customized module combining breathwork, movement, and stillness.",
-                icon: Layers,
-                color: "text-foreground",
-                border: "border-foreground/20"
-              }
-            ].map((protocol, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.8, delay: i * 0.2 }}
-                className={`p-10 rounded-sm bg-secondary/20 border ${protocol.border} hover:bg-secondary/40 transition-all duration-500 group relative overflow-hidden`}
-              >
-                <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-30 transition-opacity transform group-hover:rotate-12 duration-700">
-                  <protocol.icon className="w-24 h-24" />
-                </div>
+            {activeTreatments.length === 0 ? (
+              // Loading Skeleton
+              [1, 2, 3].map(i => (
+                <div key={i} className="h-64 rounded-sm bg-secondary/10 animate-pulse border border-primary/5"></div>
+              ))
+            ) : activeTreatments.map((protocol, i) => {
+              const Icon = getIconForCategory(protocol.category)
+              return (
+                <motion.div
+                  key={protocol.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.8, delay: i * 0.1 }}
+                  className={`p-10 rounded-sm bg-secondary/20 border border-primary/10 hover:bg-secondary/40 transition-all duration-500 group relative overflow-hidden flex flex-col`}
+                >
+                  <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:opacity-30 transition-opacity transform group-hover:rotate-12 duration-700">
+                    <Icon className="w-24 h-24" />
+                  </div>
 
-                <div className={`w-12 h-12 rounded-full border border-current flex items-center justify-center mb-8 ${protocol.color} opacity-80`}>
-                  <protocol.icon className="w-5 h-5" />
-                </div>
+                  <div className={`w-12 h-12 rounded-full border border-current flex items-center justify-center mb-8 text-primary opacity-80`}>
+                    <Icon className="w-5 h-5" />
+                  </div>
 
-                <h3 className="text-2xl font-serif text-foreground mb-4 group-hover:text-glow transition-all">{protocol.title}</h3>
-                <p className="text-foreground/60 text-sm leading-relaxed mb-8 font-light">
-                  {protocol.desc}
-                </p>
+                  <div className="flex justify-between items-start gap-4 mb-4">
+                    <h3 className="text-2xl font-serif text-foreground group-hover:text-glow transition-all">{protocol.title}</h3>
+                    <span className="font-mono text-xs text-primary/70 pt-2">฿{protocol.price_thb.toLocaleString()}</span>
+                  </div>
 
-                <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase opacity-60 group-hover:opacity-100 group-hover:text-primary transition-all">
-                  <span>Begin Journey</span>
-                  <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </motion.div>
-            ))}
+                  <div className="flex gap-3 mb-4 text-[10px] uppercase tracking-wider font-bold text-foreground/40">
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {protocol.duration_min} min</span>
+                    <span className="w-[1px] bg-foreground/20 h-3"></span>
+                    <span>{protocol.category}</span>
+                  </div>
+
+                  <p className="text-foreground/60 text-sm leading-relaxed mb-8 font-light flex-grow">
+                    {protocol.description}
+                  </p>
+
+                  <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase opacity-60 group-hover:opacity-100 group-hover:text-primary transition-all mt-auto">
+                    <span>Book Ritual</span>
+                    <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </motion.div>
+              )
+            })}
           </div>
         </div>
       </section>
@@ -422,6 +328,7 @@ export default function Home() {
             <a href="#" className="hover:text-primary transition-colors">Sanctuary</a>
             <a href="#" className="hover:text-primary transition-colors">Philosophy</a>
             <a href="#" className="hover:text-primary transition-colors">Contact</a>
+            <a href="/admin" className="hover:text-primary transition-colors opacity-50 hover:opacity-100">Staff Portal</a>
           </div>
 
           <p className="text-foreground/30 text-xs font-light tracking-wide">

@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeft, Gift, Calendar, User, Star, ChevronRight, LogOut, Ticket, Share2, Instagram, X } from "lucide-react"
+import { ArrowLeft, Gift, Calendar, User, Star, ChevronRight, LogOut, Ticket, Share2, Instagram, X, Activity, Hand, Thermometer, Droplet, GlassWater, Sun, Info } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { useFirestoreCollection, useFirestoreDoc } from "@/hooks/useFirestore"
-import { Voucher } from "@/app/admin/page"
+import { where, orderBy, limit } from "firebase/firestore"
+import { Voucher } from "@/types"
 import html2canvas from "html2canvas"
+import QRCode from "react-qr-code"
 
 // --- Types ---
 interface Client {
@@ -31,6 +33,16 @@ interface Booking {
     priceSnapshot?: number
 }
 
+interface BiomarkerLog {
+    id: string
+    score: number
+    timestamp: any
+    email: string
+    pillar?: string
+    protocol?: any[]
+    metrics?: any
+}
+
 // --- Components ---
 
 export default function MemberPortal() {
@@ -41,12 +53,32 @@ export default function MemberPortal() {
 
     const [isGeneratingStory, setIsGeneratingStory] = useState(false)
     const [storyPreview, setStoryPreview] = useState<string | null>(null)
+    const [qrCode, setQrCode] = useState<string | null>(null)
+    const [selectedHistory, setSelectedHistory] = useState<BiomarkerLog | null>(null);
+
+    const getIconForCategory = (category: string) => {
+        switch (category) {
+            case 'Manual Therapy': return Hand;
+            case 'Contrast Therapy': return Thermometer;
+            case 'IV Prescription': return Droplet;
+            case 'Botanical Elixir': return GlassWater;
+            case 'Lifestyle': return Sun;
+            default: return Activity;
+        }
+    };
 
     // Data Fetching
     // We fetch collection to avoid "Invalid document reference" error with empty ID
     const { data: clients } = useFirestoreCollection<Client>("clients")
     const { data: bookings } = useFirestoreCollection<Booking>("bookings")
     const { data: vouchers } = useFirestoreCollection<Voucher>("vouchers")
+
+    // Fetch Biomarker History
+    const { data: biomarkerHistory } = useFirestoreCollection<BiomarkerLog>("biomarker_logs", [
+        where("email", "==", member?.email || "null"),
+        orderBy("timestamp", "desc"),
+        limit(5)
+    ], [member?.email]);
 
     // Handle Login
     const handleLogin = (e: React.FormEvent) => {
@@ -60,10 +92,17 @@ export default function MemberPortal() {
             if (foundClient) {
                 setMember(foundClient)
                 setLoginStatus("success")
+                localStorage.setItem("yarey_member_email", foundClient.email)
             } else {
                 setLoginStatus("error")
             }
         }, 1500)
+    }
+
+    const handleLogout = () => {
+        setMember(null)
+        setLoginStatus("idle")
+        localStorage.removeItem("yarey_member_email")
     }
 
     // Auto-update member object if client data changes real-time
@@ -71,6 +110,16 @@ export default function MemberPortal() {
         if (member) {
             const upToDate = clients.find(c => c.id === member.id)
             if (upToDate) setMember(upToDate)
+        } else {
+            // Try restore session
+            const stored = localStorage.getItem("yarey_member_email")
+            if (stored && clients.length > 0) {
+                const found = clients.find(c => c.email.toLowerCase() === stored.toLowerCase())
+                if (found) {
+                    setMember(found)
+                    setLoginStatus("success")
+                }
+            }
         }
     }, [clients, member?.id])
 
@@ -299,53 +348,8 @@ export default function MemberPortal() {
                         }}
                     />
 
-                    {/* 3. Drifting Nebula Clouds (Rich Spectrum) */}
-                    {currentTier.name === "Guardian" && (
-                        <>
-                            <motion.div
-                                animate={{
-                                    x: [0, 100, 0],
-                                    y: [0, -50, 0],
-                                    scale: [1, 1.2, 1],
-                                    opacity: [0.3, 0.5, 0.3]
-                                }}
-                                transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
-                                className="absolute top-[10%] left-[20%] w-[40vw] h-[40vw] rounded-full bg-fuchsia-600 blur-[120px] mix-blend-screen"
-                            />
-                            <motion.div
-                                animate={{
-                                    x: [0, -100, 0],
-                                    y: [0, 50, 0],
-                                    scale: [1, 1.5, 1],
-                                    opacity: [0.2, 0.4, 0.2]
-                                }}
-                                transition={{ duration: 25, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-                                className="absolute bottom-[20%] right-[20%] w-[50vw] h-[50vw] rounded-full bg-cyan-600 blur-[150px] mix-blend-screen"
-                            />
-                        </>
-                    )}
-                    {currentTier.name === "Alchemist" && (
-                        <>
-                            <motion.div
-                                animate={{ scale: [1, 1.1, 1], opacity: [0.2, 0.4, 0.2] }}
-                                transition={{ duration: 15, repeat: Infinity }}
-                                className="absolute top-[20%] right-[10%] w-[60vw] h-[60vw] bg-amber-600/20 rounded-full blur-[120px] mix-blend-screen"
-                            />
-                            <motion.div
-                                animate={{ x: [-50, 50, -50], opacity: [0.1, 0.3, 0.1] }}
-                                transition={{ duration: 20, repeat: Infinity }}
-                                className="absolute bottom-[-10%] left-[-10%] w-[70vw] h-[70vw] bg-yellow-900/20 rounded-full blur-[120px]"
-                            />
-                        </>
-                    )}
 
-                    {/* 4. Twinkling Deep Stars */}
-                    <div className="absolute inset-0 opacity-50">
-                        <div className="absolute top-[20%] left-[15%] w-1 h-1 bg-white rounded-full animate-pulse" style={{ animationDuration: '3s' }} />
-                        <div className="absolute top-[60%] left-[80%] w-1 h-1 bg-teal-200 rounded-full animate-pulse" style={{ animationDuration: '4s' }} />
-                        <div className="absolute top-[40%] right-[10%] w-[2px] h-[2px] bg-pink-200 rounded-full animate-pulse" style={{ animationDuration: '2s' }} />
-                        <div className="absolute bottom-[30%] left-[30%] w-[2px] h-[2px] bg-blue-200 rounded-full animate-pulse" style={{ animationDuration: '5s' }} />
-                    </div>
+
                 </div>
             )}
 
@@ -354,7 +358,7 @@ export default function MemberPortal() {
                 <div className="max-w-xl mx-auto flex justify-between items-center">
                     <div className="text-xl font-serif text-[#D1C09B]">Sanctuary.</div>
                     <button
-                        onClick={() => { setMember(null); setEmail(""); }}
+                        onClick={handleLogout}
                         className="text-xs uppercase tracking-widest text-white/50 hover:text-white flex items-center gap-2"
                     >
                         Sign Out <LogOut className="w-3 h-3" />
@@ -379,50 +383,31 @@ export default function MemberPortal() {
                         {/* ICON BLENDING FIX: Remove 'Atmospheric Background' for icons, use mix-blend on the icon itself */}
 
                         {/* Alchemist Shine (Alchemist Only) */}
-                        {currentTier.name === "Alchemist" && (
-                            <div className="absolute inset-0 z-0 overflow-hidden">
-                                <motion.div
-                                    animate={{ x: ["-100%", "200%"] }}
-                                    transition={{ duration: 3, repeat: Infinity, ease: "easeInOut", repeatDelay: 1 }}
-                                    className="absolute top-0 left-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/40 to-transparent skew-x-12"
-                                />
-                            </div>
-                        )}
+
 
                         <div className="relative z-10">
                             <div className="text-[10px] uppercase font-bold opacity-60 mb-1 tracking-widest">Membership Tier</div>
                             <div className="text-xl font-bold flex items-center gap-2 md:gap-3 mb-2 font-serif relative">
                                 {currentTier.name === "Guardian" ? (
-                                    <motion.div
-                                        animate={{ rotate: 360 }}
-                                        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                                        className="relative w-12 h-12 md:w-16 md:h-16 -ml-2 md:-ml-3 flex-shrink-0"
-                                    >
-                                        {/* Standard IMG tag for perfect control over blending */}
+                                    <div className="relative w-12 h-12 md:w-16 md:h-16 -ml-2 md:-ml-3 flex-shrink-0">
                                         <img
                                             src="/tier-guardian.png?v=2"
                                             alt="Guardian Singularity"
-                                            loading="eager"
                                             className="w-full h-full object-contain mix-blend-screen filter saturate-150 contrast-125"
                                         />
-                                    </motion.div>
+                                    </div>
                                 ) : currentTier.name === "Alchemist" ? (
-                                    <motion.div
-                                        animate={{ scale: [1, 1.1, 1] }}
-                                        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                                        className="relative w-12 h-12 md:w-16 md:h-16 -ml-2 md:-ml-3 flex-shrink-0"
-                                    >
+                                    <div className="relative w-12 h-12 md:w-16 md:h-16 -ml-2 md:-ml-3 flex-shrink-0">
                                         <img
                                             src="/tier-alchemist.png?v=2"
                                             alt="Alchemist Flux"
-                                            loading="eager"
                                             className="w-full h-full object-contain mix-blend-screen filter saturate-150 brightness-110"
                                         />
-                                    </motion.div>
+                                    </div>
                                 ) : (
                                     <Star className="w-6 h-6 fill-current" />
                                 )}
-                                <span className={`text-2xl md:text-3xl tracking-wide ${currentTier.name === "Guardian" ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-200 via-white to-purple-200 animate-shine" : currentTier.name === "Alchemist" ? "text-[#FFD700]" : ""}`}>
+                                <span className={`text-2xl md:text-3xl tracking-wide ${currentTier.name === "Guardian" ? "text-purple-200" : currentTier.name === "Alchemist" ? "text-[#FFD700]" : ""}`}>
                                     {currentTier.name}
                                 </span>
                             </div>
@@ -456,11 +441,10 @@ export default function MemberPortal() {
                         {/* Living Graph */}
                         <div className="absolute bottom-0 left-0 w-full h-12 flex items-end gap-1 px-4 opacity-30">
                             {[40, 60, 30, 80, 50, 90, 20, 45, 70].map((h, i) => (
-                                <motion.div
+                                <div
                                     key={i}
-                                    animate={{ height: [`${h}%`, `${Math.max(20, h + (i % 2 === 0 ? 10 : -10))}%`, `${h}%`] }}
-                                    transition={{ duration: 2 + (i * 0.2), repeat: Infinity, ease: "easeInOut" }}
                                     className="flex-1 bg-white rounded-t-sm"
+                                    style={{ height: `${h}%` }}
                                 />
                             ))}
                         </div>
@@ -591,7 +575,58 @@ export default function MemberPortal() {
                     })()}
                 </div>
 
-                {/* Next Appointment - Breathing */}
+                {/* Biometric Score Section */}
+                <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }} className="mb-8">
+                    <div className="bg-gradient-to-br from-[#0c2627] to-[#051818] border border-white/10 rounded-2xl p-6 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Activity className="w-32 h-32 text-primary" />
+                        </div>
+
+                        <div className="flex justify-between items-start relative z-10">
+                            <div
+                                onClick={() => biomarkerHistory?.[0] && setSelectedHistory(biomarkerHistory[0])}
+                                className={`cursor-pointer group transition-all ${biomarkerHistory?.length > 0 ? '' : 'pointer-events-none'}`}
+                            >
+                                <h3 className="text-sm font-serif text-white/60 uppercase tracking-widest mb-1 group-hover:text-white transition-colors flex items-center gap-2">
+                                    Current Wellness Score
+                                    {biomarkerHistory?.length > 0 && <Info className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                                </h3>
+                                <div className="text-5xl font-light text-white mb-2 group-hover:scale-105 transition-transform origin-left">
+                                    {biomarkerHistory?.[0]?.score || "--"} <span className="text-lg text-white/30">/ 100</span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-white/40">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    {biomarkerHistory?.length > 0 ? `Last synced: ${new Date(biomarkerHistory[0]?.timestamp?.toDate()).toLocaleDateString()}` : "No scan data available"}
+                                </div>
+                            </div>
+                            <Link href="/biomarker">
+                                <Button className="bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-full px-6">
+                                    {biomarkerHistory?.length > 0 ? "New Scan" : "Start First Scan"}
+                                </Button>
+                            </Link>
+                        </div>
+
+                        {/* History Mini-Graph */}
+                        {biomarkerHistory && biomarkerHistory.length > 1 && (
+                            <div className="mt-6 pt-4 border-t border-white/5 flex gap-4 overflow-x-auto pb-2">
+                                {biomarkerHistory.slice(1).map((log: any, i: number) => (
+                                    <div
+                                        key={i}
+                                        onClick={() => setSelectedHistory(log)}
+                                        className="flex flex-col items-center min-w-[60px] group cursor-pointer"
+                                    >
+                                        <span className="text-[10px] text-white/80 mb-1 font-mono font-bold tracking-tighter">{log.score}</span>
+                                        <div className="h-16 w-1.5 bg-white/5 rounded-full relative group-hover:w-2 transition-all duration-300">
+                                            <div className="absolute bottom-0 w-full bg-primary/40 group-hover:bg-primary rounded-full transition-colors" style={{ height: `${log.score}%` }}></div>
+                                        </div>
+                                        <span className="text-[9px] text-white/30 mt-2 group-hover:text-white transition-colors">{new Date(log.timestamp?.toDate()).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </motion.div>
+
                 {/* Next Appointment - Breathing */}
                 {nextVisit ? (
                     <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }} className="bg-gradient-to-r from-[#0c2627] to-[#051818] border border-[#D1C09B]/30 p-6 rounded-2xl relative overflow-hidden group">
@@ -625,6 +660,83 @@ export default function MemberPortal() {
                     </motion.div>
                 )}
 
+                {/* HISTORY DETAIL MODAL */}
+                <AnimatePresence>
+                    {selectedHistory && (
+                        <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-50 bg-[#051818]/95 backdrop-blur-xl flex items-start justify-center p-6 overflow-y-auto"
+                            onClick={() => setSelectedHistory(null)}
+                        >
+                            <motion.div
+                                initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
+                                className="w-full max-w-2xl bg-[#0c2627] border border-[#D1C09B]/20 rounded-3xl relative shadow-2xl overflow-hidden mt-10 md:mt-20 mb-20"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {/* Header */}
+                                <div className="p-8 pb-4 border-b border-white/5 flex justify-between items-start">
+                                    <div>
+                                        <div className="text-xs text-white/40 uppercase tracking-widest font-bold mb-1">
+                                            {new Date(selectedHistory.timestamp?.toDate()).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                        </div>
+                                        <h3 className="text-2xl font-serif text-white">{selectedHistory.pillar || "Biomarker Analysis"}</h3>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-4xl font-light text-[#D1C09B]">{selectedHistory.score}</div>
+                                        <div className="text-[10px] text-white/40 uppercase tracking-widest">Wellness Score</div>
+                                    </div>
+                                    <button
+                                        onClick={() => setSelectedHistory(null)}
+                                        className="absolute top-4 right-4 p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 transition-colors"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                {/* Protocols Content */}
+                                <div className="p-8 space-y-6">
+                                    {selectedHistory.protocol ? (
+                                        <div className="grid grid-cols-1 gap-4">
+                                            {Array.isArray(selectedHistory.protocol) ? selectedHistory.protocol.map((item: any, idx: number) => {
+                                                const Icon = getIconForCategory(item.category);
+                                                return (
+                                                    <div key={idx} className="bg-white/5 border border-white/5 p-4 rounded-xl flex gap-4">
+                                                        <div className="w-10 h-10 rounded-full bg-primary/10 flex-shrink-0 flex items-center justify-center text-primary">
+                                                            <Icon className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <div className="flex justify-between items-start mb-1">
+                                                                <div className="text-[10px] uppercase tracking-widest text-primary/60 font-bold">{item.category}</div>
+                                                                {item.tag && <span className="text-[9px] px-2 py-0.5 rounded-full border border-white/10 text-white/40">{item.tag}</span>}
+                                                            </div>
+                                                            <div className="text-lg font-serif text-white mb-2">{item.title}</div>
+                                                            <div className="text-sm text-white/60 leading-relaxed border-t border-white/5 pt-2">{item.detail}</div>
+
+                                                            {item.benefits && (
+                                                                <div className="flex flex-wrap gap-2 mt-3">
+                                                                    {item.benefits.map((b: string, i: number) => (
+                                                                        <span key={i} className="px-2 py-1 rounded bg-white/5 text-[10px] text-white/40">{b}</span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            }) : (
+                                                <div className="text-white/40 text-center italic">Detailed protocol data format is invalid.</div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="text-white/40 text-center py-8">
+                                            Detailed protocol data was not saved for this session.
+                                        </div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 {/* Vouchers List - Holographic */}
                 <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }} className="space-y-4 pt-4 border-t border-white/5">
                     <h3 className="text-lg font-serif text-white/50 px-2 uppercase tracking-widest text-xs">My Gift Vouchers</h3>
@@ -632,10 +744,26 @@ export default function MemberPortal() {
                         {memberVouchers.map(v => (
                             <div key={v.id} className="relative group perspective-1000">
                                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-12 translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000 z-20 pointer-events-none" />
-                                <div className="bg-gradient-to-br from-[#0c2627] to-[#041212] border border-[#D1C09B]/20 p-6 rounded-xl flex justify-between items-center relative overflow-hidden shadow-lg group-hover:scale-[1.02] transition-transform duration-300">
+                                <div
+                                    onClick={() => setQrCode(v.code)}
+                                    className="bg-gradient-to-br from-[#0c2627] to-[#041212] border border-[#D1C09B]/20 p-6 rounded-xl flex justify-between items-center relative overflow-hidden shadow-lg group-hover:scale-[1.02] transition-transform duration-300 cursor-pointer"
+                                >
                                     <div className="relative z-10">
-                                        <div className="text-[#D1C09B] text-[10px] uppercase font-bold tracking-widest mb-1">Gift Certificate</div>
-                                        <div className="text-white font-serif text-xl">{v.treatmentTitle?.replace(/^\d+m\s*\|\s*/, '') || "Experience"}</div>
+                                        <div className="text-[#D1C09B] text-[10px] uppercase font-bold tracking-widest mb-1">
+                                            {v.type === "package" ? "Membership Package" : "Single Session"}
+                                        </div>
+                                        <div className="text-white font-serif text-xl">
+                                            {(() => {
+                                                const raw = v.treatmentTitle || "Experience"
+                                                const match = raw.match(/^(\d+)m\s*\|\s*(.*)/)
+                                                return match ? `${match[2]} ${match[1]}min` : raw
+                                            })()}
+                                        </div>
+                                        {v.type === "package" && (
+                                            <div className="text-emerald-400 text-xs font-bold mt-1 bg-emerald-400/10 inline-block px-2 py-0.5 rounded-sm border border-emerald-400/20">
+                                                {v.creditsRemaining} / {v.creditsTotal} Sessions Remaining
+                                            </div>
+                                        )}
                                         <div className="text-white/40 text-xs mt-1 font-mono">{v.code}</div>
                                     </div>
                                     <div className="text-right">
@@ -681,6 +809,38 @@ export default function MemberPortal() {
                 </motion.div>
 
             </motion.div>
+            {/* QR Code Modal for Guest */}
+            <AnimatePresence>
+                {qrCode && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md" onClick={() => setQrCode(null)}>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-6 max-w-sm w-full"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="text-center">
+                                <h3 className="text-xl font-serif text-black mb-1">Redeem Voucher</h3>
+                                <p className="text-sm text-gray-500">Show this to reception</p>
+                            </div>
+
+                            <div className="p-4 border-2 border-dashed border-gray-200 rounded-xl">
+                                <QRCode value={qrCode} size={200} />
+                            </div>
+
+                            <div className="text-center">
+                                <p className="font-mono text-2xl font-bold text-black tracking-wider">{qrCode}</p>
+                            </div>
+
+                            <Button onClick={() => setQrCode(null)} variant="outline" className="w-full rounded-full border-gray-300 text-gray-600 hover:bg-gray-50">
+                                Close
+                            </Button>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
         </div>
     )
 }

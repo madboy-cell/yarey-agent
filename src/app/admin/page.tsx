@@ -1,67 +1,30 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, Suspense } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { Container } from "@/components/layout/container"
 import { PulseTab } from "@/components/admin/PulseTab"
 import { Button } from "@/components/ui/button"
 import {
     Users, Calendar, Clock, MoreVertical, Wind, Sun, Users2, CheckCircle2,
     Trash2, QrCode, MessageCircle, Play, CheckSquare, LogOut, Plus, Edit2,
-    Card, Eye, EyeOff, Save, X, LayoutGrid, List, MapPin, Receipt, Gift, Mail, Download, FlaskConical, DollarSign, User, ChevronDown
+    Eye, EyeOff, Save, X, LayoutGrid, List, MapPin, Receipt, Gift, Mail, Download, FlaskConical, DollarSign, User, ChevronDown
 } from "lucide-react"
 import html2canvas from "html2canvas"
 import { useFirestoreCollection, useFirestoreCRUD, useFirestoreDoc } from "@/hooks/useFirestore"
 import { db } from "@/lib/firebase"
-import { collection, doc, onSnapshot } from "firebase/firestore"
+import { collection, doc, onSnapshot, orderBy } from "firebase/firestore"
+import { signOut } from "firebase/auth"
+import { auth } from "@/lib/firebase"
 import { BookingCard } from "@/components/admin/BookingCard"
 import { BookingDetailModal } from "@/components/admin/BookingDetailModal"
 import { DailyClosingModal } from "@/components/admin/DailyClosingModal" // Import Z-Report
+import { Scanner } from '@yudiel/react-qr-scanner'
 
 // Types
-export interface Booking {
-    id: string
-    guests: number
-    time: string
-    date: string
-    status: string
-    treatment: string
-    contact?: {
-        name: string
-        method: string
-        handle: string
-    }
-    notes?: string
-    priceSnapshot?: number
-    paymentMethod?: "Cash" | "Transfer" | "Credit Card"
-    // Salesman / Commission
-    salesmanId?: string
-    commissionSnapshot?: number
-    commissionAmount?: number
-}
-
-interface Salesman {
-    id: string
-    name: string
-    nickname: string
-    commissionRate: number
-    active: boolean
-    photoUrl?: string
-    joinedDate: string
-}
-
-interface Treatment {
-    id: string
-    title: string
-    category: string
-    duration_min: number
-    price_thb: number
-    description: string
-    active: boolean
-    includes?: string[]
-}
+import { Booking, Salesman, Treatment, Voucher, Client } from "@/types"
 
 interface Block {
     id: string
@@ -70,48 +33,33 @@ interface Block {
     reason: string
 }
 
-interface Voucher {
-    id: string
-    code: string
-    treatmentId: string
-    treatmentTitle: string
-    pricePaid: number
-    originalPrice: number
-    status: "ISSUED" | "REDEEMED" | "VOID"
-    recipientName: string
-    issuedAt: string
-    expiresAt?: string
-    clientId?: string
-}
 
-interface Client {
+
+export interface Session {
     id: string
-    name: string
     email: string
-    phone?: string
-}
-
-interface Session {
-    id: string
-    guestName: string
-    createdAt: number
-    pillarID: number
-    metrics: {
-        intake: {
-            hrv: number
-            rhr: number
-            respRate: number
-        }
-    }
-    output: {
-        pillarName: string
-        trigger: string
-    }
+    score: number
+    pillar: string
+    metrics: any
+    protocol: any[]
+    timestamp: any
 }
 
 export default function AdminDashboard() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-[#051818] flex items-center justify-center text-[#D1C09B]">Loading Interface...</div>}>
+            <AdminDashboardContent />
+        </Suspense>
+    )
+}
+
+function AdminDashboardContent() {
+    const router = useRouter()
     const searchParams = useSearchParams()
-    const [activeTab, setActiveTab] = useState<"sanctuary" | "menu" | "pulse" | "vouchers" | "lab">("sanctuary")
+    const [activeTab, setActiveTab] = useState<"sanctuary" | "menu" | "analytics" | "vouchers" | "lab">("sanctuary")
+
+
+
 
     // Handle Deep Links (e.g. from CRM)
     useEffect(() => {
@@ -158,12 +106,14 @@ export default function AdminDashboard() {
     const { data: blocks } = useFirestoreCollection<Block>("blocks")
     const { data: vouchers } = useFirestoreCollection<Voucher>("vouchers")
     const { data: salesmen } = useFirestoreCollection<Salesman>("salesmen")
-    const { data: sessions } = useFirestoreCollection<Session>("sessions")
+    const { data: sessions } = useFirestoreCollection<Session>("biomarker_logs", [orderBy("timestamp", "desc")])
     const { data: clients } = useFirestoreCollection<Client>("clients") // Fetch Clients
+    const { data: expenses } = useFirestoreCollection<{ id: string, month: string, title: string, amount: number, category: string }>("expenses") // For Analytics Net Profit
+    const { data: targetSettings } = useFirestoreDoc<{ monthlyGoals: Record<string, number> }>("settings", "targets") // Monthly Targets
 
     // Derived: Today's Bookings
     const todayStr = new Date().toLocaleDateString("en-CA")
-    const todayBookings = rawBookings.filter(b => b.date === "Today" || b.date === todayStr)
+    const todayBookings = rawBookings.filter(b => b.date === todayStr)
     const bookings = rawBookings // Alias backwards compatibility for history lookups like 'getVisitCount'
 
     // Global Settings (Vibe) - Direct Document Subscription
@@ -230,7 +180,9 @@ export default function AdminDashboard() {
         recipientName: "",
         validityPeriod: "3M", // 1M, 3M, 6M, 1Y, CUSTOM
         customExpiration: "",
-        clientId: undefined as string | undefined
+        clientId: undefined as string | undefined,
+        isPackage: false,
+        credits: 10
     })
     const [generatedVoucher, setGeneratedVoucher] = useState<Voucher | null>(null)
     const [isMemberSearchOpen, setIsMemberSearchOpen] = useState(false)
@@ -239,6 +191,68 @@ export default function AdminDashboard() {
     const [tempVoucher, setTempVoucher] = useState<Voucher | null>(null)
     const [downloadingId, setDownloadingId] = useState<string | null>(null)
     const ticketRef = useRef<HTMLDivElement>(null)
+
+    // --- Auto-Pilot: Status Automation ---
+    useEffect(() => {
+        const checkStatus = () => {
+            // Optimization removed: 'finance' is a separate route
+
+            const now = new Date()
+
+            todayBookings.forEach(b => {
+                if (!b.time) return
+
+                // 1. Parse Start Time to Date Object
+                const timeMatch = b.time.match(/(\d+):(\d+)\s*(AM|PM)?/i)
+                if (!timeMatch) return
+
+                let hours = parseInt(timeMatch[1])
+                const minutes = parseInt(timeMatch[2])
+                const period = timeMatch[3]
+
+                if (period) {
+                    if (period.toUpperCase() === "PM" && hours !== 12) hours += 12
+                    else if (period.toUpperCase() === "AM" && hours === 12) hours = 0
+                }
+
+                const startTime = new Date()
+                startTime.setHours(hours, minutes, 0, 0)
+
+                // 2. Determine Duration & End Time
+                const treat = treatments.find(t => t.title === b.treatment)
+                const duration = treat?.duration_min || 60
+                const endTime = new Date(startTime.getTime() + duration * 60000)
+
+                // 3. Logic: Confirmed -> Arrived (At Start Time)
+                if (b.status === "Confirmed" && now >= startTime && now < endTime) {
+                    console.log(`[Auto-Pilot] Marking ${b.contact?.name} as Arrived`)
+                    bookingOps.update(b.id, { status: "Arrived" })
+                }
+
+                // 4. Logic: Active -> Complete (At End Time)
+                const activeStatuses = ["Confirmed", "Arrived", "In Ritual", "Started", "Checked In"]
+                if (activeStatuses.includes(b.status) && now >= endTime) {
+                    console.log(`[Auto-Pilot] Completing ${b.contact?.name}`)
+                    bookingOps.update(b.id, { status: "Complete" })
+                }
+            })
+        }
+
+        const interval = setInterval(checkStatus, 60000) // Check every minute
+        checkStatus() // Run once immediately
+        return () => clearInterval(interval)
+    }, [todayBookings, treatments, activeTab])
+
+    // Scanner State
+    const [isScanning, setIsScanning] = useState(false)
+    const [scannedVoucher, setScannedVoucher] = useState<Voucher | null>(null)
+
+    const handleScan = (code: string) => {
+        if (!code) return
+        // Redirect to Walk-in Booking Flow
+        router.push(`/admin/walk-in?voucher=${code}`)
+        setIsScanning(false)
+    }
 
     // --- Interactions ---
 
@@ -362,6 +376,9 @@ export default function AdminDashboard() {
             recipientName: voucherForm.recipientName,
             clientId: voucherForm.clientId,
             issuedAt: new Date().toISOString(),
+            type: voucherForm.isPackage ? "package" : "single",
+            creditsTotal: voucherForm.isPackage ? voucherForm.credits : 1,
+            creditsRemaining: voucherForm.isPackage ? voucherForm.credits : 1,
             expiresAt: (() => {
                 const d = new Date()
                 if (voucherForm.validityPeriod === "1M") d.setMonth(d.getMonth() + 1)
@@ -427,7 +444,7 @@ export default function AdminDashboard() {
     // Helper: Determine phase from HH:MM or Phase String
     const getCurrentPhase = () => {
         const hour = new Date().getHours()
-        if (hour < 14) return "Morning"
+        if (hour < 12) return "Morning"
         if (hour < 17) return "Sun Peak"
         return "Evening"
     }
@@ -435,21 +452,21 @@ export default function AdminDashboard() {
     const isBookingInPhase = (bookingTime: string | undefined, distinctPhase: string) => {
         if (!bookingTime) return false
         if (bookingTime.includes(distinctPhase)) return true
-        const [timePart, period] = bookingTime.split(" ")
-        let [hours] = timePart.split(":").map(Number)
-        if (isNaN(hours)) return false
 
-        // Convert 12-hour to 24-hour format
+        // Robust Regex Parsing
+        const match = bookingTime.match(/(\d+):(\d+)\s*(AM|PM)?/i)
+        if (!match) return false
+
+        let hours = parseInt(match[1])
+        const period = match[3]
+
         if (period) {
-            if (period.toUpperCase() === "PM" && hours !== 12) {
-                hours += 12
-            } else if (period.toUpperCase() === "AM" && hours === 12) {
-                hours = 0
-            }
+            if (period.toUpperCase() === "PM" && hours !== 12) hours += 12
+            else if (period.toUpperCase() === "AM" && hours === 12) hours = 0
         }
 
-        if (distinctPhase === "Morning") return hours < 14
-        if (distinctPhase === "Sun Peak") return hours >= 14 && hours < 17
+        if (distinctPhase === "Morning") return hours < 12
+        if (distinctPhase === "Sun Peak") return hours >= 12 && hours < 17
         if (distinctPhase === "Evening") return hours >= 17
         return false
     }
@@ -472,7 +489,7 @@ export default function AdminDashboard() {
         <div className="min-h-screen bg-background py-16 aura-bg relative overflow-hidden">
             <div className="fixed inset-0 noise z-0 pointer-events-none opacity-[0.03]" />
 
-            <Container className="max-w-7xl relative z-10 hidden lg:block">
+            <Container className="max-w-7xl relative z-10">
 
                 {/* Header */}
                 <header className="flex justify-between items-end mb-12">
@@ -487,14 +504,14 @@ export default function AdminDashboard() {
                         <h1 className="text-4xl md:text-6xl font-serif text-foreground tracking-tighter lowercase leading-none">Host Sanctuary.</h1>
                     </div>
 
-                    <div className="flex items-center gap-6">
+                    <div className="flex flex-col xl:flex-row items-start xl:items-center gap-6 w-full">
                         {/* Tab Switcher */}
-                        <div className="bg-white/50 backdrop-blur-sm p-1 rounded-full flex border border-border/50">
+                        <div className="bg-white/50 backdrop-blur-sm p-1 rounded-[2rem] flex flex-wrap gap-1 border border-border/50 w-full xl:w-auto justify-center">
                             {[
                                 { id: "sanctuary", label: "Host View" },
                                 { id: "menu", label: "Menu CMS" },
                                 { id: "vouchers", label: "Vouchers" },
-                                { id: "pulse", label: "Pulse" },
+                                { id: "analytics", label: "Analytics" },
                                 { id: "lab", label: "Lab" }
                             ].map(tab => (
                                 <button
@@ -509,38 +526,52 @@ export default function AdminDashboard() {
 
 
                         {/* New Booking Action */}
-                        <div className="flex gap-4">
-                            <Button
-                                variant="outline"
-                                onClick={() => setShowDailyClosing(true)}
-                                className="rounded-full border-primary/20 text-primary hover:bg-primary/5 px-4 py-2 h-auto text-xs font-bold uppercase tracking-widest w-10 h-10 p-0 flex items-center justify-center"
-                                title="Daily Closing Z-Report"
-                            >
-                                <Receipt className="w-4 h-4" />
-                            </Button>
+                        <div className="flex gap-2 md:gap-4 flex-wrap w-full xl:w-auto justify-center xl:justify-end">
+                            {/* Command Center */}
+                            <div className="flex flex-wrap gap-2 items-center">
+                                <Link href="/admin/walk-in">
+                                    <Button className="h-10 rounded-full bg-primary text-[#0A2021] hover:bg-primary/90 px-6 font-bold uppercase tracking-wider shadow-lg shadow-primary/20 flex items-center gap-2 transition-all hover:scale-105">
+                                        <Plus className="w-4 h-4" /> Guest Check-in
+                                    </Button>
+                                </Link>
 
-                            <Link href="/admin/finance">
-                                <Button variant="outline" className="rounded-full border-primary/20 text-primary hover:bg-primary/5 px-4 py-2 h-auto text-xs font-bold uppercase tracking-widest w-10 h-10 p-0 flex items-center justify-center" title="Finance & Payroll">
-                                    <DollarSign className="w-4 h-4" />
+                                <Button
+                                    onClick={() => setIsScanning(true)}
+                                    className="h-10 rounded-full bg-white/5 border border-white/10 text-primary hover:bg-primary/10 px-6 font-bold uppercase tracking-wider flex items-center gap-2"
+                                >
+                                    <QrCode className="w-4 h-4" /> Scan
                                 </Button>
-                            </Link>
-                            <Link href="/admin/clients">
-                                <Button variant="outline" className="rounded-full border-primary/20 text-primary hover:bg-primary/5 px-4 py-2 h-auto text-xs font-bold uppercase tracking-widest w-10 h-10 p-0 flex items-center justify-center" title="Client CRM">
-                                    <User className="w-4 h-4" />
+                                {/* Logout Button */}
+                                <Button
+                                    onClick={() => signOut(auth)}
+                                    variant="ghost"
+                                    className="h-10 w-10 p-0 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"
+                                    title="Sign Out"
+                                >
+                                    <LogOut className="w-4 h-4" />
                                 </Button>
-                            </Link>
-                            <Link href="/admin/walk-in">
-                                <Button className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90 px-6 py-2 h-auto text-xs font-bold uppercase tracking-widest shadow-xl shadow-primary/20">
-                                    <Plus className="w-4 h-4 mr-2" /> New Booking
+
+                                <div className="w-[1px] h-8 bg-white/10 mx-2" />
+
+                                <Button
+                                    onClick={() => setShowDailyClosing(true)}
+                                    variant="ghost"
+                                    className="h-10 w-10 rounded-full border border-white/10 hover:bg-white/5 text-foreground/40 hover:text-foreground p-0"
+                                    title="Z-Report"
+                                >
+                                    <Receipt className="w-4 h-4" />
                                 </Button>
-                            </Link>
-                            <Button
-                                onClick={handleDeleteAllBookings}
-                                variant="outline"
-                                className="rounded-full border-red-500/20 text-red-500 hover:bg-red-500/5 px-6 py-2 h-auto text-xs font-bold uppercase tracking-widest"
-                            >
-                                <Trash2 className="w-4 h-4 mr-2" /> Delete All
-                            </Button>
+                                <Link href="/admin/finance">
+                                    <Button variant="ghost" className="h-10 w-10 rounded-full border border-white/10 hover:bg-white/5 text-foreground/40 hover:text-foreground p-0" title="Finance">
+                                        <DollarSign className="w-4 h-4" />
+                                    </Button>
+                                </Link>
+                                <Link href="/admin/clients">
+                                    <Button variant="ghost" className="h-10 w-10 rounded-full border border-white/10 hover:bg-white/5 text-foreground/40 hover:text-foreground p-0" title="Clients">
+                                        <Users className="w-4 h-4" />
+                                    </Button>
+                                </Link>
+                            </div>
 
                         </div>
                     </div>
@@ -549,7 +580,7 @@ export default function AdminDashboard() {
                 {/* Tab Content */}
                 {activeTab === "sanctuary" && (
                     // --- HOST VIEW (Timeline) ---
-                    <div className="grid grid-cols-3 gap-8 min-h-[600px]">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 min-h-[600px]">
                         {Object.entries(timeline).map(([phase, items], i) => (
                             <div key={phase} className="space-y-6">
                                 <div className="flex items-center justify-between border-b border-border/40 pb-4">
@@ -607,6 +638,7 @@ export default function AdminDashboard() {
                         <BookingDetailModal
                             booking={selectedBooking}
                             treatments={treatments}
+                            salesmen={salesmen}
                             statusColors={statusColors}
                             onClose={() => setSelectedBooking(null)}
                             onSave={handleUpdateBooking}
@@ -617,8 +649,8 @@ export default function AdminDashboard() {
                 {
                     activeTab === "menu" && (
                         // --- MENU MANAGER (CMS) ---
-                        <div className="grid grid-cols-12 gap-12">
-                            <div className="col-span-8 space-y-8">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12">
+                            <div className="lg:col-span-8 space-y-8 order-2 lg:order-1">
                                 <div className="flex items-center justify-between">
                                     <h2 className="font-serif text-2xl text-foreground">Treatment Menu</h2>
                                     <Button onClick={() => { setCurrentTreatment({}); setIsEditing(true) }} className="rounded-full px-6 bg-primary text-white hover:bg-primary/90">
@@ -626,7 +658,7 @@ export default function AdminDashboard() {
                                     </Button>
                                 </div>
 
-                                <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-hidden shadow-2xl">
+                                <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-x-auto shadow-2xl">
                                     <table className="w-full text-left">
                                         <thead className="bg-secondary/30 border-b border-primary/10">
                                             <tr>
@@ -666,7 +698,7 @@ export default function AdminDashboard() {
                             </div>
 
                             {/* Edit Form Panel */}
-                            <div className="col-span-4">
+                            <div className="lg:col-span-4 order-1 lg:order-2">
                                 <AnimatePresence>
                                     {isEditing && (
                                         <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="bg-card rounded-[2.5rem] p-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-primary/20 sticky top-32 backdrop-blur-md">
@@ -678,23 +710,23 @@ export default function AdminDashboard() {
                                             <div className="space-y-6">
                                                 <div className="space-y-2">
                                                     <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Title</label>
-                                                    <input type="text" className="w-full bg-background/50 border border-border/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary" value={currentTreatment.title || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, title: e.target.value })} placeholder="e.g. Deep Tissue" />
+                                                    <input type="text" className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary placeholder:text-gray-400" value={currentTreatment.title || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, title: e.target.value })} placeholder="e.g. Deep Tissue" />
                                                 </div>
 
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div className="space-y-2">
                                                         <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Price (THB)</label>
-                                                        <input type="number" className="w-full bg-background/50 border border-border/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary" value={currentTreatment.price_thb || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, price_thb: Number(e.target.value) })} placeholder="2500" />
+                                                        <input type="number" className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary placeholder:text-gray-400" value={currentTreatment.price_thb || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, price_thb: Number(e.target.value) })} placeholder="2500" />
                                                     </div>
                                                     <div className="space-y-2">
                                                         <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Duration (Min)</label>
-                                                        <input type="number" className="w-full bg-background/50 border border-border/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary" value={currentTreatment.duration_min || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, duration_min: Number(e.target.value) })} placeholder="60" />
+                                                        <input type="number" className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary placeholder:text-gray-400" value={currentTreatment.duration_min || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, duration_min: Number(e.target.value) })} placeholder="60" />
                                                     </div>
                                                 </div>
 
                                                 <div className="space-y-2">
                                                     <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Category</label>
-                                                    <select className="w-full bg-background/50 border border-border/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary" value={currentTreatment.category || "Massage"} onChange={e => setCurrentTreatment({ ...currentTreatment, category: e.target.value })}>
+                                                    <select className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary" value={currentTreatment.category || "Massage"} onChange={e => setCurrentTreatment({ ...currentTreatment, category: e.target.value })}>
                                                         <option value="Massage">Massage</option>
                                                         <option value="Nordic Zone">Nordic Zone</option>
                                                         <option value="Rest">Rest</option>
@@ -704,12 +736,12 @@ export default function AdminDashboard() {
 
                                                 <div className="space-y-2">
                                                     <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Description</label>
-                                                    <textarea className="w-full bg-background/50 border border-border/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary min-h-[100px]" value={currentTreatment.description || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, description: e.target.value })} placeholder="Guest facing copy..." />
+                                                    <textarea className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary min-h-[100px] placeholder:text-gray-400" value={currentTreatment.description || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, description: e.target.value })} placeholder="Guest facing copy..." />
                                                 </div>
 
                                                 <div className="space-y-2">
                                                     <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Includes (CSV)</label>
-                                                    <input type="text" className="w-full bg-background/50 border border-border/50 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary" value={currentTreatment.includes?.join(", ") || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, includes: e.target.value.split(",").map(s => s.trim()) })} placeholder="Sauna, Tea, Scrub" />
+                                                    <input type="text" className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary placeholder:text-gray-400" value={currentTreatment.includes?.join(", ") || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, includes: e.target.value.split(",").map(s => s.trim()) })} placeholder="Sauna, Tea, Scrub" />
                                                 </div>
 
                                                 <Button onClick={saveTreatment} className="w-full rounded-xl bg-primary hover:bg-primary/90 text-white py-6">
@@ -726,12 +758,17 @@ export default function AdminDashboard() {
 
                 {
                     activeTab === "vouchers" && (
-                        <div className="grid grid-cols-12 gap-12">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12">
                             {/* 1. Generator Panel (Left) */}
-                            <div className="col-span-5 space-y-8">
-                                <div>
-                                    <h2 className="font-serif text-2xl text-foreground mb-1">Issue Voucher</h2>
-                                    <p className="text-sm text-foreground/60">Generate prepaid codes for social media sales.</p>
+                            <div className="lg:col-span-5 space-y-8">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <h2 className="font-serif text-2xl text-foreground mb-1">Issue Voucher</h2>
+                                        <p className="text-sm text-foreground/60">Generate prepaid codes or scan.</p>
+                                    </div>
+                                    <Button onClick={() => setIsScanning(true)} variant="outline" className="rounded-full border-primary/40 text-primary hover:bg-primary/10">
+                                        <QrCode className="w-4 h-4 mr-2" /> Scan Ticket
+                                    </Button>
                                 </div>
 
                                 <div className="bg-[#0c2627] rounded-[2rem] p-8 border border-primary/20 shadow-lg space-y-6">
@@ -748,6 +785,41 @@ export default function AdminDashboard() {
                                             ))}
                                         </select>
                                     </div>
+
+                                    {/* Type Selector */}
+                                    <div className="flex gap-4 items-center pl-2">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="type"
+                                                checked={!voucherForm.isPackage}
+                                                onChange={() => setVoucherForm(prev => ({ ...prev, isPackage: false }))}
+                                            />
+                                            <span className="text-sm text-foreground">Single Use</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                name="type"
+                                                checked={voucherForm.isPackage}
+                                                onChange={() => setVoucherForm(prev => ({ ...prev, isPackage: true }))}
+                                            />
+                                            <span className="text-sm text-foreground">Multi-Use Package</span>
+                                        </label>
+                                    </div>
+
+                                    {voucherForm.isPackage && (
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Number of Valid Sessions</label>
+                                            <input
+                                                type="number"
+                                                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary"
+                                                value={voucherForm.credits}
+                                                onChange={(e) => setVoucherForm(prev => ({ ...prev, credits: Number(e.target.value) }))}
+                                                min={2}
+                                            />
+                                        </div>
+                                    )}
 
                                     <div className="space-y-2">
                                         <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Promo Price (THB)</label>
@@ -847,7 +919,7 @@ export default function AdminDashboard() {
                             </div>
 
                             {/* 2. Visual Output (Right) */}
-                            <div className="col-span-7 space-y-8">
+                            <div className="lg:col-span-7 space-y-8">
                                 <div>
                                     <h2 className="font-serif text-2xl text-foreground mb-1">Active Vouchers</h2>
                                     <p className="text-sm text-foreground/60">{vouchers.filter(v => v.status === "ISSUED").length} codes ready to redeem.</p>
@@ -888,7 +960,7 @@ export default function AdminDashboard() {
                                 )}
 
                                 {/* List of active codes */}
-                                <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-hidden max-h-[400px] overflow-y-auto shadow-2xl">
+                                <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-x-auto overflow-y-auto max-h-[400px] shadow-2xl">
                                     <table className="w-full text-left">
                                         <thead className="bg-[#0F2E2E]/60 border-b border-primary/10 sticky top-0 backdrop-blur-md">
                                             <tr>
@@ -986,8 +1058,8 @@ export default function AdminDashboard() {
                 }
 
                 {
-                    activeTab === "pulse" && (
-                        <PulseTab bookings={bookings} treatments={treatments} salesmen={salesmen} onEdit={setSelectedBooking} />
+                    activeTab === "analytics" && (
+                        <PulseTab bookings={bookings} treatments={treatments} salesmen={salesmen} expenses={expenses} targetSettings={targetSettings} onEdit={setSelectedBooking} />
                     )
                 }
 
@@ -999,37 +1071,40 @@ export default function AdminDashboard() {
                                 <p className="text-sm text-foreground/60">Biometric analysis history and guest physiology.</p>
                             </div>
 
-                            <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-hidden shadow-2xl">
+                            <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-x-auto shadow-2xl">
                                 <table className="w-full text-left">
                                     <thead className="bg-[#0F2E2E]/60 border-b border-primary/10">
                                         <tr>
                                             <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Time</th>
                                             <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Guest</th>
-                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Assigned Pillar</th>
-                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Trigger</th>
+                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Wellness Score</th>
+                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Pillar</th>
                                             <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold text-right">Metrics</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border/10">
-                                        {(sessions as Session[]).sort((a, b) => b.createdAt - a.createdAt).map(s => (
+                                        {sessions.map(s => (
                                             <tr key={s.id} className="hover:bg-primary/5 transition-colors">
                                                 <td className="p-6 text-xs font-mono text-foreground/60">
-                                                    {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    <div className="text-[10px] opacity-50">{new Date(s.createdAt).toLocaleDateString()}</div>
+                                                    {s.timestamp?.toDate ? new Date(s.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "--:--"}
+                                                    <div className="text-[10px] opacity-50">{s.timestamp?.toDate ? new Date(s.timestamp.toDate()).toLocaleDateString() : ""}</div>
                                                 </td>
-                                                <td className="p-6 font-medium text-sm">{s.guestName}</td>
+                                                <td className="p-6 font-medium text-sm">{s.email || "Guest"}</td>
                                                 <td className="p-6">
-                                                    <span className={`px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold border ${getPillarColor(s.pillarID)}`}>
-                                                        {s.output.pillarName}
+                                                    <span className={`text-xl font-light ${s.score > 80 ? "text-emerald-400" : s.score < 50 ? "text-red-400" : "text-amber-400"}`}>
+                                                        {s.score}
+                                                    </span>
+                                                    <span className="text-[10px] text-foreground/30 ml-1">/ 100</span>
+                                                </td>
+                                                <td className="p-6">
+                                                    <span className="px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold border border-white/10 bg-white/5">
+                                                        {s.pillar}
                                                     </span>
                                                 </td>
-                                                <td className="p-6 text-xs text-foreground/60 max-w-xs truncate" title={s.output.trigger}>
-                                                    {s.output.trigger}
-                                                </td>
                                                 <td className="p-6 text-right font-mono text-[10px] text-foreground/50 space-x-3">
-                                                    <span title="HRV">♥ {Math.round(s.metrics.intake.hrv)}ms</span>
-                                                    <span title="Resting Heart Rate">⚡ {Math.round(s.metrics.intake.rhr)}bpm</span>
-                                                    <span title="Respiration">💨 {s.metrics.intake.respRate.toFixed(1)}</span>
+                                                    <span title="HRV">♥ {s.metrics?.hrv || 0}ms</span>
+                                                    <span title="Resting Heart Rate">⚡ {s.metrics?.rhr || 0}bpm</span>
+                                                    <span title="Deep Sleep">💤 {s.metrics?.deepSleep || 0}m</span>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1046,7 +1121,7 @@ export default function AdminDashboard() {
                 }
 
                 {/* Env Control Footer */}
-                <div className="mt-20 border-t border-border/40 pt-10 flex justify-between items-center relative z-50 pointer-events-auto">
+                <div className="mt-20 border-t border-border/40 pt-10 flex flex-col md:flex-row gap-6 justify-between items-center relative z-50 pointer-events-auto">
                     <div className="flex gap-4 items-center">
                         <h4 className="text-[10px] uppercase tracking-widest font-bold text-foreground/40">Sanctuary Vibe:</h4>
                         <div className="flex gap-2">
@@ -1088,13 +1163,119 @@ export default function AdminDashboard() {
                     )}
                 </AnimatePresence>
 
+                {/* Scanner Modal */}
+                <AnimatePresence>
+                    {isScanning && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+                            <div className="bg-white rounded-[2rem] p-6 max-w-md w-full relative">
+                                <button onClick={() => setIsScanning(false)} className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full">
+                                    <X className="w-5 h-5 text-black" />
+                                </button>
+                                <h3 className="text-xl font-serif text-black mb-4 text-center">Scan Guest Ticket</h3>
+                                <div className="rounded-xl overflow-hidden aspect-square bg-black">
+                                    <Scanner onScan={(result) => {
+                                        if (result && result.length > 0) {
+                                            handleScan(result[0].rawValue)
+                                        }
+                                    }} />
+                                </div>
+                                <p className="text-center text-gray-500 mt-4 text-sm">Point camera at the QR code</p>
+                            </div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Scanned Voucher Detail Modal */}
+                <AnimatePresence>
+                    {scannedVoucher && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.9 }}
+                                className="bg-[#0c2627] border border-primary/20 rounded-[2rem] p-8 max-w-sm w-full shadow-2xl space-y-6"
+                            >
+                                <div className="text-center space-y-2">
+                                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider ${scannedVoucher.status === 'ISSUED' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
+                                        {scannedVoucher.status}
+                                    </div>
+                                    <h3 className="text-2xl font-serif text-primary">{scannedVoucher.treatmentTitle}</h3>
+                                    <p className="text-white/60 text-sm">For {scannedVoucher.recipientName}</p>
+                                </div>
+
+                                <div className="bg-black/20 rounded-xl p-4 text-center space-y-1 border border-white/5">
+                                    <p className="text-[10px] uppercase tracking-widest text-white/40">Voucher Code</p>
+                                    <p className="font-mono text-xl font-bold text-white tracking-widest">{scannedVoucher.code}</p>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="text-center">
+                                        <p className="text-[10px] uppercase tracking-widest text-white/40">Value</p>
+                                        <p className="text-white font-medium">฿{scannedVoucher.pricePaid.toLocaleString()}</p>
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-[10px] uppercase tracking-widest text-white/40">Expires</p>
+                                        <p className="text-white font-medium">{scannedVoucher.expiresAt ? new Date(scannedVoucher.expiresAt).toLocaleDateString() : 'Never'}</p>
+                                    </div>
+                                </div>
+
+                                {scannedVoucher.status === "ISSUED" && (
+                                    <Button
+                                        onClick={async () => {
+                                            const isPackage = scannedVoucher.type === "package"
+                                            // Robust casting
+                                            const currentRemaining = typeof scannedVoucher.creditsRemaining === 'number'
+                                                ? scannedVoucher.creditsRemaining
+                                                : (scannedVoucher.creditsTotal || 1)
+
+                                            // Confirmation
+                                            if (!confirm(isPackage
+                                                ? `Deduct 1 Credit? (${currentRemaining} remaining)`
+                                                : `Redeem ${scannedVoucher.code} for ${scannedVoucher.recipientName}?`
+                                            )) return
+
+                                            if (isPackage) {
+                                                const newRemaining = currentRemaining - 1
+                                                const fullyRedeemed = newRemaining <= 0
+
+                                                console.log(`PUNCH CARD REDEEM: ${currentRemaining} -> ${newRemaining}`)
+
+                                                await voucherOps.update(scannedVoucher.id, {
+                                                    creditsRemaining: newRemaining,
+                                                    status: fullyRedeemed ? "REDEEMED" : "ISSUED",
+                                                    redeemedAt: fullyRedeemed ? new Date().toISOString() : undefined
+                                                })
+
+                                                alert(fullyRedeemed ? "✅ Package Finalized!" : `✅ Used 1 Credit. Remaining: ${newRemaining}`)
+                                                setScannedVoucher(null)
+                                            } else {
+                                                await voucherOps.update(scannedVoucher.id, {
+                                                    status: "REDEEMED",
+                                                    redeemedAt: new Date().toISOString()
+                                                })
+                                                setScannedVoucher(null)
+                                                alert("✅ Voucher Redeemed Successfully!")
+                                            }
+                                        }}
+                                        className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90"
+                                    >
+                                        {scannedVoucher.type === "package" ? `Use Credit (${scannedVoucher.creditsRemaining} Left)` : "Redeem Now"}
+                                    </Button>
+                                )}
+
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => setScannedVoucher(null)}
+                                    className="w-full text-white/40 hover:text-white"
+                                >
+                                    Close
+                                </Button>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
             </Container >
-            <div className="lg:hidden h-screen flex items-center justify-center p-8 text-center bg-background">
-                <div className="space-y-4">
-                    <p className="font-serif text-2xl text-foreground">Desktop/Tablet Required</p>
-                    <p className="text-sm text-foreground/60">Please use the Host Station on a larger screen.</p>
-                </div>
-            </div>
+
             {/* Delete Confirmation Modal */}
             <AnimatePresence>
                 {deleteId && (
@@ -1182,6 +1363,15 @@ export default function AdminDashboard() {
                         </div>
                     </div>
                 )}
+                {/* Floating Action Button (Mobile) */}
+                <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setIsScanning(true)}
+                    className="fixed bottom-6 right-6 z-50 h-16 w-16 bg-primary rounded-full shadow-[0_0_30px_rgba(209,192,155,0.3)] flex items-center justify-center text-[#0A2021] md:hidden"
+                >
+                    <QrCode className="w-8 h-8" />
+                </motion.button>
             </div>
         </div >
     )

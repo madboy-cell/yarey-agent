@@ -1,166 +1,279 @@
-# Software Architecture Document
-**Project:** Yarey Wellness Operating System
-**Version:** 1.3
-**Date:** January 09, 2026
+# Yarey Wellness Spa - System Architecture & UML
+
+## 📊 Overview
+
+**Yarey** is a Next.js-based wellness spa management system with real-time Firebase/Firestore backend. It handles bookings, staff management, analytics, biomarker analysis, and client loyalty.
 
 ---
 
-## 1. Executive Summary
-The Yarey Wellness Operating System is a bespoke, single-page application (SPA) designed to digitize and optimize the daily operations of Yarey Wellness in Phuket. This document outlines the technical architecture, data structures, and core functional modules that power the **Admin Dashboard**, **Point of Sale (POS)**, and **Commission Tracking** systems.
+## 🏗️ High-Level Architecture
 
-The system is built on a modern **Next.js 14** framework, utilizing client-side persistence mechanisms to ensure zero-latency performance and offline capability for critical operational tasks.
-
----
-
-## 2. System Architecture
-
-### 2.1 High-Level Diagram
-The following diagram illustrates the data flow between user interfaces and the local persistence layer.
-
-```mermaid
-graph TD
-    subgraph "Presentation Layer (Next.js)"
-        AdminDashboard["🖥️ Admin Dashboard (/admin)
-        • Host View (Timeline)
-        • Menu CMS
-        • Pulse Analytics"]
-        
-        POS["📱 POS Console (/admin/walk-in)
-        • Service Grid
-        • Group Cart
-        • Checkout"]
-        
-        StaffSettings["⚙️ Staff Settings (/admin/settings)
-        • Salesman CRUD
-        • Commission Rates"]
-    end
-
-    subgraph "Persistence Layer (LocalStorage)"
-        DB_Bookings[("(yarey_bookings)
-        Transaction Log")]
-        
-        DB_Treatments[("(yarey_treatments)
-        Service Catalog")]
-        
-        DB_Vouchers[("(yarey_vouchers)
-        Prepaid Ledger")]
-        
-        DB_Salesmen[("(yarey_salesmen)
-        Staff Registry")]
-    end
-
-    %% Booking Flow
-    POS -->|Reads| DB_Treatments
-    POS -->|Validates/Redeems| DB_Vouchers
-    POS -->|Reads Staff| DB_Salesmen
-    POS -->|Writes New Booking| DB_Bookings
-
-    %% Admin Flow
-    AdminDashboard -->|Visualizes/Edits| DB_Bookings
-    AdminDashboard -->|Manages| DB_Treatments
-    AdminDashboard -->|Issues| DB_Vouchers
-    AdminDashboard -->|Aggregates Stats| DB_Bookings
-    
-    %% Staff Flow
-    StaffSettings -->|Updates| DB_Salesmen
-    AdminDashboard -.->|Reads for Pulse| DB_Salesmen
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        CLIENT (Next.js 16)                       │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────┐ │
+│  │  Public     │  │  Admin      │  │  Biomarker  │  │ Members │ │
+│  │  Booking    │  │  Dashboard  │  │  Lab        │  │ Loyalty │ │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────┘ │
+├─────────────────────────────────────────────────────────────────┤
+│                     Components Layer                             │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌────────────────┐ │
+│  │ BookingCard      │  │ PulseTab         │  │ ServiceGrid    │ │
+│  │ BookingDetailModal│ │ DailyClosingModal│  │ GroupBookingCart│ │
+│  └──────────────────┘  └──────────────────┘  └────────────────┘ │
+├─────────────────────────────────────────────────────────────────┤
+│                       Hooks & Services                           │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ useFirestore (collection, CRUD, doc subscriptions)         │ │
+│  │ Loyalty Engine (tier calculation, benefits)                │ │
+│  │ Biomarker Analysis (pillars, protocols)                    │ │
+│  └────────────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────────────┤
+│                    Firebase / Firestore                          │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────────┐ │
+│  │bookings │ │treatments│ │salesmen │ │vouchers │ │ expenses   │ │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘ └────────────┘ │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐                │
+│  │ clients │ │ blocks  │ │settings │ │biomarker│                │
+│  │         │ │         │ │         │ │_logs    │                │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘                │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Technology Stack
+---
 
-| Component | Technology | Rationale |
-| :--- | :--- | :--- |
-| **Framework** | Next.js 14 (App Router) | React Server Components architecture for future scalability. |
-| **Styling** | Tailwind CSS | Utility-first CSS for rapid UI development and consistent design system. |
-| **Animation** | Framer Motion | High-performance animations for "premium" interface feel. |
-| **Persistence** | LocalStorage API | Zero-latency, offline-first data storage for MVP phase. |
-| **Icons** | Lucide React | Consistent, lightweight vector iconography. |
-| **Utilities** | html2canvas | Client-side generation of branded PNG tickets. |
+## 📦 Entity Relationship Diagram (ERD)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              ENTITIES                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐
+│    Treatment     │         │     Booking      │         │     Salesman     │
+├──────────────────┤         ├──────────────────┤         ├──────────────────┤
+│ id: string       │◄───────┐│ id: string       │────────►│ id: string       │
+│ title: string    │        ││ date: string     │         │ name: string     │
+│ category: string │        ││ time: string     │         │ nickname: string │
+│ duration_min: num│        ││ guests: number   │         │ commissionRate   │
+│ price_thb: number│        ││ status: string   │         │ hourlyRate       │
+│ description      │        ││ treatment: str ──┘         │ baseSalary       │
+│ active: boolean  │        ││ priceSnapshot    │         │ role: string     │
+│ includes?: []    │        ││ salesmanId ──────┼────────►│ active: boolean  │
+└──────────────────┘        ││ therapistId ─────┼────────►│ photoUrl         │
+                            ││ commissionAmount │         └──────────────────┘
+                            ││ therapistCost    │
+                            ││ paymentMethod    │
+                            ││ contact: {       │         ┌──────────────────┐
+                            ││   name, email,   │         │     Client       │
+                            ││   phone, source  │◄───────►├──────────────────┤
+                            ││   nationality    │         │ id: string       │
+                            ││ }                │         │ name: string     │
+                            ││ items?: []       │         │ email: string    │
+                            │└──────────────────┘         │ phone: string    │
+                            │                             │ visits: number   │
+                            │                             └──────────────────┘
+                            │
+┌──────────────────┐        │    ┌──────────────────┐
+│     Voucher      │        │    │     Expense      │
+├──────────────────┤        │    ├──────────────────┤
+│ id: string       │        │    │ id: string       │
+│ code: string     │        │    │ month: string    │  ← "YYYY-MM"
+│ treatmentId ─────┼────────┘    │ title: string    │
+│ treatmentTitle   │             │ amount: number   │
+│ pricePaid: number│             │ category: string │
+│ status: string   │             └──────────────────┘
+│ type: single/pkg │
+│ creditsTotal     │         ┌──────────────────┐
+│ creditsRemaining │         │     Settings     │
+│ recipientName    │         ├──────────────────┤
+│ clientId ────────┼────────►│ vibe.current     │
+│ expiresAt        │         │ targets.goals{}  │
+└──────────────────┘         │ outsource.rate   │
+                             └──────────────────┘
+```
 
 ---
 
-## 3. Module Specifications
+## 🔄 Booking Flow Sequence Diagram
 
-### 3.1 Admin Dashboard
-**Route:** `/admin`
-The central command center for the Host/Manager.
-*   **Host View:** A timeline-based visualization of daily bookings ("Morning", "Sun Peak", "Evening").
-*   **Menu CMS:** Create, Read, Update, Delete (CRUD) operations for Spa Treatments.
-*   **Vouchers:** Management interface for generating prepaid promo codes.
-*   **Pulse:** Real-time analytics dashboard monitoring Revenue, Ritual Mix, and Sales Performance.
-
-### 3.2 Point of Sale (POS)
-**Route:** `/admin/walk-in`
-A reduced-interface console optimized for touchscreens and quick data entry.
-*   **Group Cart:** Supports multi-guest checkout in a single transaction.
-*   **Commission Attribution:** "Sold By" mechanism to link revenue to specific staff members.
-*   **Dynamic Pricing:** Supports manual discounts and automated voucher redemption.
-*   **Guest Details:** Captures Nationality, Contact Info, and Source.
-
-### 3.3 Staff Settings
-**Route:** `/admin/settings/sales-staff`
-Configuration panel for the sales team.
-*   **Staff Registry:** Manage active salesmen and their unique commission rates.
-*   **Soft Delete:** Inactivate staff without destroying historical transaction data.
-
----
-
-## 4. Data Dictionary
-The application persists data using a JSON-based schema in the browser's `localStorage`.
-
-### 4.1 Bookings (`yarey_bookings`)
-*Primary Ledger.*
-*   `id` (String): Unique UUID.
-*   `guests` (Number): Pax count.
-*   `status` (String): "Confirmed", "Arrived", "In Ritual", "Complete".
-*   `priceSnapshot` (Number): The finalized revenue at time of booking.
-*   `salesmanId` (String): ID of the credited staff member.
-*   `commissionAmount` (Number): Calculated commission value.
-
-### 4.2 Treatments (`yarey_treatments`)
-*Service Catalog.*
-*   `title` (String): Name of the ritual.
-*   `price_thb` (Number): Standard list price.
-*   `active` (Boolean): Visibility toggle.
-
-### 4.3 Salesmen (`yarey_salesmen`)
-*Staff Registry.*
-*   `nickname` (String): Display name for leaderboards.
-*   `commissionRate` (Float): Percentage (e.g., `0.05` for 5%).
+```
+┌─────────┐     ┌───────────┐     ┌───────────┐     ┌──────────┐
+│ Guest   │     │ Walk-in   │     │ Firestore │     │ Staff    │
+│         │     │ POS       │     │           │     │ Dashboard│
+└────┬────┘     └─────┬─────┘     └─────┬─────┘     └────┬─────┘
+     │                │                 │                 │
+     │  Walk in       │                 │                 │
+     │───────────────►│                 │                 │
+     │                │                 │                 │
+     │                │ fetch treatments│                 │
+     │                │────────────────►│                 │
+     │                │◄────────────────│                 │
+     │                │                 │                 │
+     │                │ Select services │                 │
+     │◄───────────────│ for each guest  │                 │
+     │                │                 │                 │
+     │                │ Assign Salesman │                 │
+     │                │ Assign Therapist│                 │
+     │                │ (or OUTSOURCE)  │                 │
+     │                │                 │                 │
+     │                │ Calculate:      │                 │
+     │                │  - priceSnapshot│                 │
+     │                │  - commission   │                 │
+     │                │  - therapistCost│                 │
+     │                │                 │                 │
+     │                │ addDoc(bookings)│                 │
+     │                │────────────────►│                 │
+     │                │                 │ Real-time sync  │
+     │                │                 │────────────────►│
+     │                │                 │                 │
+     │                │◄────────────────│                 │
+     │  Confirmation  │                 │                 │
+     │◄───────────────│                 │                 │
+     │                │                 │                 │
+```
 
 ---
 
-## 5. Component Architecture (Class Structure)
-This section details the physical organization of the codebase and the component hierarchy.
+## 📈 Analytics Cost Calculation
 
-### 5.1 Directory Structure
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MONTHLY COST BREAKDOWN                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Revenue (from bookings) ─────────────────► ฿XXX,XXX        │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ LABOR COSTS                                         │   │
+│  ├─────────────────────────────────────────────────────┤   │
+│  │ Base Salary (Σ salesman.baseSalary)     → ฿XX,XXX   │   │
+│  │ Sales Commission (Σ booking.commission) → ฿X,XXX    │   │
+│  │ Therapist/Outsource (Σ therapistCost)   → ฿X,XXX    │   │
+│  │                                         ───────────  │   │
+│  │ Labor Subtotal                          → ฿XX,XXX   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ OTHER EXPENSES (from expenses collection)           │   │
+│  ├─────────────────────────────────────────────────────┤   │
+│  │ Electricity, Water, Rent, Supplies...   → ฿XX,XXX   │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  Total Costs = Labor + Other Expenses      → ฿XXX,XXX      │
+│  Cost Ratio = Total Costs / Revenue × 100  → XX%           │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📁 Directory Structure
+
 ```
 src/
-├── app/                  # Next.js App Router (Pages)
-│   ├── page.tsx          # Public Landing Page (Booking Request)
-│   ├── globals.css       # Global Styles & Tailwind Directives
-│   └── admin/            # Protected Admin Zone
-│       ├── page.tsx      # Main Dashboard (Host View, Menu, Vouchers)
-│       ├── layout.tsx    # Admin Sidebar & Layout Wrapper
-│       ├── walk-in/      # POS Console Page
-│       └── settings/     # Configuration Pages
+├── app/
+│   ├── admin/
+│   │   ├── page.tsx           # Main admin dashboard (Host View, Menu CMS, Analytics)
+│   │   ├── walk-in/           # Walk-in POS system
+│   │   ├── clients/           # CRM / Client management
+│   │   ├── finance/           # Payroll, expenses, staff management
+│   │   ├── seed-2025/         # Test data seeding
+│   │   └── settings/          # Sales staff config
+│   ├── biomarker/             # Bio-verification scanning
+│   ├── booking/               # Public booking page
+│   ├── discovery/             # Discovery/info page
+│   ├── lab/                   # Lab analysis view
+│   ├── members/               # Member loyalty portal
+│   └── api/
+│       └── biomarker/         # AI analysis endpoint
 │
-├── components/           # Reusable UI Modules
-│   ├── ui/               # Generic Shadcn/UI primitives (Button, Input)
-│   ├── admin/            # Domain-Specific Admin Components
-│   │   ├── BookingDetailModal.tsx  # Edit/View Booking Logic (Forms, Nationality)
-│   │   ├── PulseTab.tsx            # Analytics Dashboard
-│   │   └── walk-in/      # POS Specific Components
-│   │       ├── ServiceGrid.tsx     # Ritual Selection Grid
-│   │       └── GroupBookingCart.tsx # Cart & Checkout Logic (Guest Forms)
+├── components/
+│   ├── admin/
+│   │   ├── BookingCard.tsx        # Individual booking display
+│   │   ├── BookingDetailModal.tsx # Full booking editor
+│   │   ├── DailyClosingModal.tsx  # Z-Report
+│   │   ├── PulseTab.tsx           # Analytics dashboard
+│   │   └── walkin/
+│   │       ├── ServiceGrid.tsx    # Treatment selector
+│   │       ├── GroupBookingCart.tsx
+│   │       └── TimeSlotPicker.tsx
+│   ├── biomarker/                 # Biomarker UI components
+│   ├── feature/                   # Vibe meter, etc.
+│   └── ui/                        # Shared UI (buttons, cards)
 │
-└── lib/                  # Utilities & Constants
-    ├── nationalities.ts  # Static Data (Dropdown Source)
-    ├── utils.ts          # Helper Functions
-    └── firebase.ts       # (Optional) Remote Persistence
+├── hooks/
+│   └── useFirestore.ts        # Real-time Firestore subscription hook
+│
+├── lib/
+│   ├── firebase.ts            # Firebase initialization
+│   ├── loyalty.ts             # Tier calculation logic
+│   ├── nationalities.ts       # Nationality list
+│   ├── biomarker/             # Analysis algorithms
+│   └── pdf/                   # Payslip generation
+│
+└── types.ts                   # Shared TypeScript interfaces
 ```
 
-### 5.2 Key Dependencies & Relationships
-*   **`Admin Page`** consumes **`BookingDetailModal`** and **`PulseTab`**.
-*   **`GroupBookingCart`** and **`BookingDetailModal`** both consume **`nationalities.ts`**.
-*   **`ServiceGrid`** triggers state updates in **`POS Page`**, which syncs to **`GroupBookingCart`**.
+---
+
+## 🔐 Firebase Collections
+
+| Collection | Purpose |
+|------------|---------|
+| `bookings` | All spa bookings with guest, treatment, staff, financial data |
+| `treatments` | Menu of available treatments with pricing |
+| `salesmen` | Staff members (sales + therapists) with rates |
+| `clients` | CRM database of guests |
+| `vouchers` | Gift vouchers and packages |
+| `expenses` | Monthly operational expenses |
+| `blocks` | Time slot blocks (closed times) |
+| `settings` | App configuration (vibe, targets, outsource rate) |
+| `biomarker_logs` | Guest biomarker scan results |
+
+---
+
+## 🎨 Component Relationship Diagram
+
+```
+                    ┌─────────────────────┐
+                    │   AdminDashboard    │
+                    │   (page.tsx)        │
+                    └──────────┬──────────┘
+                               │
+        ┌──────────────────────┼──────────────────────┐
+        │                      │                      │
+        ▼                      ▼                      ▼
+┌───────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│  Host View    │    │   Menu CMS      │    │   Analytics      │
+│  (Timeline)   │    │   (CRUD)        │    │   (PulseTab)     │
+└───────┬───────┘    └─────────────────┘    └────────┬─────────┘
+        │                                            │
+        ▼                                            ▼
+┌───────────────┐                          ┌──────────────────┐
+│ BookingCard   │◄─────────────────────────│ getMonthlyCost   │
+└───────┬───────┘                          │ calculateRetention│
+        │                                  │ YoY Comparison   │
+        ▼                                  └──────────────────┘
+┌───────────────────┐
+│BookingDetailModal │
+│  - Guest Info     │
+│  - Treatments     │
+│  - Commission     │
+│  - Therapist Cost │
+└───────────────────┘
+```
+
+---
+
+## 🚀 Key Features Summary
+
+| Module | Features |
+|--------|----------|
+| **Walk-in POS** | Multi-guest booking, therapist assignment, commission tracking |
+| **Analytics** | Revenue, costs, retention, YoY comparison, leaderboards |
+| **Finance** | Payroll, expenses, payslip generation |
+| **CRM** | Client database, visit history, voucher linking |
+| **Biomarker Lab** | Health scan, pillar analysis, treatment protocols |
+| **Members** | Loyalty tiers, voucher redemption |

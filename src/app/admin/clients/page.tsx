@@ -4,9 +4,10 @@ import { useState, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { ArrowLeft, Search, User, Mail, Phone, Calendar, Gift, RefreshCw, Star, TrendingUp, DollarSign } from "lucide-react"
 import Link from "next/link"
+import QRCode from "react-qr-code"
 import { Button } from "@/components/ui/button"
 import { useFirestoreCollection, useFirestoreCRUD } from "@/hooks/useFirestore"
-import { Voucher } from "../page" // Import Voucher type
+import { Voucher } from "@/types" // Import shared Voucher type
 import { isRedemptionBooking, calculateClientSpend, determineTier, TIERS } from "@/lib/loyalty"
 
 // Types
@@ -32,6 +33,9 @@ interface Booking {
     priceSnapshot?: number
     date: string
     status: string
+    items?: any[]
+    paymentMethod?: string
+    notes?: string
 }
 
 export default function ClientsPage() {
@@ -46,6 +50,7 @@ export default function ClientsPage() {
     const [isSyncing, setIsSyncing] = useState(false)
     const [isAdding, setIsAdding] = useState(false)
     const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+    const [qrCode, setQrCode] = useState<string | null>(null)
     const [newClientForm, setNewClientForm] = useState({ name: "", email: "", phone: "", notes: "" })
 
     // Manual Add
@@ -483,7 +488,11 @@ export default function ClientsPage() {
                                                 .filter(v => v.clientId === selectedClient.id)
                                                 .filter(v => v.status === "ISSUED")
                                                 .map(v => (
-                                                    <div key={v.id} className="p-4 bg-[#0c2627] border border-[#D1C09B]/30 rounded-xl relative overflow-hidden group">
+                                                    <div
+                                                        key={v.id}
+                                                        onClick={() => setQrCode(v.code)}
+                                                        className="p-4 bg-[#0c2627] border border-[#D1C09B]/30 rounded-xl relative overflow-hidden group cursor-pointer hover:bg-[#0c2627]/80 hover:border-[#D1C09B] transition-all"
+                                                    >
                                                         <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
                                                             <Gift className="w-12 h-12 text-[#D1C09B]" />
                                                         </div>
@@ -600,6 +609,37 @@ export default function ClientsPage() {
                     )}
                 </AnimatePresence>
             </div>
+            {/* QR Code Modal for Guest */}
+            <AnimatePresence>
+                {qrCode && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md" onClick={() => setQrCode(null)}>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="bg-white p-8 rounded-[2rem] shadow-2xl flex flex-col items-center gap-6 max-w-sm w-full"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="text-center">
+                                <h3 className="text-xl font-serif text-black mb-1">Redeem Voucher</h3>
+                                <p className="text-sm text-gray-500">Show this to reception</p>
+                            </div>
+
+                            <div className="p-4 border-2 border-dashed border-gray-200 rounded-xl">
+                                <QRCode value={qrCode} size={200} />
+                            </div>
+
+                            <div className="text-center">
+                                <p className="font-mono text-2xl font-bold text-black tracking-wider">{qrCode}</p>
+                            </div>
+
+                            <Button onClick={() => setQrCode(null)} variant="outline" className="w-full rounded-full border-gray-300 text-gray-600 hover:bg-gray-50">
+                                Close
+                            </Button>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     )
 }

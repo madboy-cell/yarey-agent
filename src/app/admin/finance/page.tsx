@@ -6,7 +6,7 @@ import { ArrowLeft, Lock, DollarSign, Calendar, Printer, TrendingUp, AlertCircle
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { useFirestoreCollection, useFirestoreCRUD, useFirestoreDoc } from "@/hooks/useFirestore" // added CRUD import
-import { Booking, Salesman } from "../page" // Import types from main admin
+import { Booking, Salesman } from "@/types" // Import shared types
 import { generatePayslip } from "@/lib/pdf/generatePayslip"
 
 // Local Types for Payroll
@@ -146,7 +146,7 @@ export default function FinancePage() {
         const totalRevenue = filteredBookings.reduce((sum, b) => sum + (b.priceSnapshot || 0), 0)
 
         // 3. Initialize Staff Maps
-        const staffMap = new Map<string, StaffPayrollEntry>()
+        const staffMap = new Map<string, PayrollEntry>()
         // Pre-fill active staff
         staff.filter(s => s.active).forEach(s => {
             staffMap.set(s.id, {

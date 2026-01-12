@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Playfair_Display_SC, Quicksand } from "next/font/google"; // New Fonts
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { Toaster } from "sonner"; // Toast Notifications
 
 // Quantum Light Typography
 const playfair = Playfair_Display_SC({
@@ -39,6 +40,7 @@ export default function RootLayout({
         <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-primary/5 rounded-full blur-[120px] -z-40 pointer-events-none" />
 
         {children}
+        <Toaster />
       </body>
     </html>
   );

@@ -14,7 +14,7 @@ import {
     QueryConstraint
 } from "firebase/firestore"
 
-export function useFirestoreCollection<T>(collectionName: string, constraints: QueryConstraint[] = []) {
+export function useFirestoreCollection<T>(collectionName: string, constraints: QueryConstraint[] = [], deps: any[] = []) {
     const [data, setData] = useState<T[]>([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<any>(null)
@@ -44,7 +44,7 @@ export function useFirestoreCollection<T>(collectionName: string, constraints: Q
             setError(err)
             setLoading(false)
         }
-    }, [collectionName]) // Re-run if collection changes. Constraints should be stable.
+    }, [collectionName, ...deps]) // Re-run if collection or dependencies change.
 
     return { data, loading, error }
 }

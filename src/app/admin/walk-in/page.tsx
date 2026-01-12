@@ -1,88 +1,42 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { motion } from "framer-motion"
 import { ArrowLeft, Calendar } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 
 import { ServiceGrid } from "@/components/admin/walkin/ServiceGrid"
 import { TimeSlotPicker } from "@/components/admin/walkin/TimeSlotPicker"
 import { GroupBookingCart, CartItem } from "@/components/admin/walkin/GroupBookingCart"
 import { useFirestoreCollection, useFirestoreCRUD, useFirestoreDoc } from "@/hooks/useFirestore"
+import { Toaster, toast } from "sonner" // Import Toast
 
-// Types (Mirrored from admin/page.tsx for compatibility)
-interface Treatment {
-    id: string
-    title: string
-    category: string
-    duration_min: number
-    price_thb: number
-    description: string
-    active: boolean
-    includes?: string[]
-}
-
-interface Booking {
-    id: string
-    guests: number
-    time: string
-    date: string
-    status: string
-    treatment: string
-    contact?: {
-        name: string
-        method: string
-        handle: string
-        email?: string | null
-        nationality?: string | null
-        source?: string | null
-    }
-    notes?: string
-    isWalkIn?: boolean
-    groupId?: string
-    priceSnapshot?: number
-    // Salesman / Commission
-    salesmanId?: string | null
-    commissionSnapshot?: number // The rate at time of booking
-    commissionAmount?: number // The calculated amount
-    // Therapist / Cost Logic
-    therapistId?: string | null
-    therapistCostSnapshot?: number // How much this booking costs in labor
-}
-
-interface Salesman {
-    id: string
-    name: string
-    nickname: string
-    nickname: string
-    commissionRate: number
-    active: boolean
-    role?: string
-    hourlyRate?: number
-}
-
-interface Voucher {
-    id: string
-    code: string
-    treatmentId: string
-    treatmentTitle: string
-    pricePaid: number
-    status: string
-    expiresAt?: string
-}
+// Types - Shared
+import { Treatment, Booking, Salesman, Voucher, Client } from "@/types"
 
 export default function WalkInDashboard() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-[#051818] flex items-center justify-center text-[#D1C09B]">Loading...</div>}>
+            <WalkInDashboardContent />
+        </Suspense>
+    )
+}
+
+function WalkInDashboardContent() {
     const router = useRouter()
+    const searchParams = useSearchParams()
 
     // Data State (Firestore)
     const { data: treatments } = useFirestoreCollection<Treatment>("treatments")
     const { data: vouchers } = useFirestoreCollection<Voucher>("vouchers")
     const { data: salesmen } = useFirestoreCollection<Salesman>("salesmen")
+    const { data: clients } = useFirestoreCollection<Client>("clients")
 
     // CRUD Ops
     const bookingOps = useFirestoreCRUD("bookings")
     const voucherOps = useFirestoreCRUD("vouchers")
+    const clientOps = useFirestoreCRUD("clients")
     const { data: outsourceSettings } = useFirestoreDoc<{ rate: number }>("settings", "outsource")
 
     // Session State
@@ -93,6 +47,53 @@ export default function WalkInDashboard() {
     const [cart, setCart] = useState<CartItem[]>([
         { tempId: "guest-1", name: "Guest 1", treatment: null, time: "Now", isHotelGuest: false, sendConfirmation: false, source: "Walk-in" }
     ])
+
+    // Auto-Populate Voucher from URL (Scan Redirection)
+    useEffect(() => {
+        const voucherCode = searchParams.get("voucher")
+        if (voucherCode && vouchers.length > 0) {
+            // Find voucher
+            const voucher = vouchers.find(v => v.code === voucherCode && (v.status === "ISSUED" || (v.type === "package" && (v.creditsRemaining || 0) > 0)))
+
+            if (voucher) {
+                // Determine treatment details (even if 0 price)
+                const treatmentTitle = voucher.treatmentTitle
+                const treatment = treatments.find(t => t.id === voucher.treatmentId) || {
+                    id: voucher.treatmentId,
+                    title: treatmentTitle,
+                    price_thb: 0,
+                    duration_min: 0 // Fallback
+                } as any
+
+                // Find linked client if exists
+                const linkedClient = voucher.clientId ? clients.find(c => c.id === voucher.clientId) : null
+
+                // Update first guest
+                setCart(prev => {
+                    const first = prev[0]
+                    // If first guest is empty/new, populate it.
+                    if (!first.treatment && !first.voucherCode) {
+                        return [{
+                            ...first,
+                            name: linkedClient?.name || voucher.recipientName || "Guest 1",
+                            email: linkedClient?.email,
+                            phone: linkedClient?.phone,
+                            treatment: {
+                                id: treatment.id,
+                                title: treatment.title,
+                                price_thb: 0,
+                                duration_min: treatment.duration_min
+                            },
+                            voucherId: voucher.id,
+                            voucherCode: voucher.code,
+                            manualDiscount: 0
+                        }, ...prev.slice(1)]
+                    }
+                    return prev
+                })
+            }
+        }
+    }, [searchParams, vouchers, treatments])
 
     // Time Change Logic: Auto-toggle confirmation
     const handleTimeSelect = (time: string) => {
@@ -212,7 +213,7 @@ export default function WalkInDashboard() {
         // 1. Check if used in CURRENT cart (prevent double redemption in same session)
         const alreadyInCart = cart.some(g => g.voucherCode === cleanCode)
         if (alreadyInCart) {
-            alert("Code already applied to another guest in this session.")
+            toast.error("Code already applied to another guest in this session.")
             return null
         }
 
@@ -221,7 +222,7 @@ export default function WalkInDashboard() {
         if (voucher) {
             // Check Expiration
             if (voucher.expiresAt && new Date() > new Date(voucher.expiresAt)) {
-                alert(`Voucher Expired on ${new Date(voucher.expiresAt).toLocaleDateString()}`)
+                toast.error(`Voucher Expired on ${new Date(voucher.expiresAt).toLocaleDateString()}`)
                 return null
             }
             return voucher
@@ -231,7 +232,7 @@ export default function WalkInDashboard() {
 
     const handleCheckout = async (paymentMethod: string) => {
         if (cart.some(g => !g.treatment)) {
-            alert("Please select a treatment for all guests.")
+            toast.error("Please select a treatment for all guests.")
             return
         }
 
@@ -251,9 +252,33 @@ export default function WalkInDashboard() {
                 revenue = Math.max(0, rawPrice - discount)
             }
 
-            // If voucher used, redeem it
+            // 2. Update Client Visits
+            if (guest.email && clients) {
+                const client = clients.find(c => c.email.toLowerCase() === (guest.email || "").toLowerCase().trim())
+                if (client) {
+                    const visits = (client.visits || 0) + 1
+                    batchPromises.push(clientOps.update(client.id, { visits }))
+                }
+            }
+
+            // 3. If voucher used, redeem it
             if (guest.voucherId) {
-                batchPromises.push(voucherOps.update(guest.voucherId, { status: "REDEEMED" }))
+                const v = vouchers.find(v => v.id === guest.voucherId)
+                if (v) {
+                    if (v.type === "package") {
+                        const currentRemaining = typeof v.creditsRemaining === 'number' ? v.creditsRemaining : (v.creditsTotal || 1)
+                        const newRemaining = currentRemaining - 1
+                        const fullyRedeemed = newRemaining <= 0
+
+                        batchPromises.push(voucherOps.update(guest.voucherId, {
+                            creditsRemaining: newRemaining,
+                            status: fullyRedeemed ? "REDEEMED" : "ISSUED",
+                            redeemedAt: fullyRedeemed ? new Date().toISOString() : null
+                        }))
+                    } else {
+                        batchPromises.push(voucherOps.update(guest.voucherId, { status: "REDEEMED", redeemedAt: new Date().toISOString() }))
+                    }
+                }
             }
 
             // Calculate commission amount
@@ -303,11 +328,11 @@ export default function WalkInDashboard() {
 
         try {
             await Promise.all(batchPromises)
-            alert(`Booking Confirmed! Group ID: ${groupId}`)
+            toast.success(`Booking Confirmed! Group ID: ${groupId}`)
             router.push("/admin")
         } catch (err: any) {
             console.error("Checkout Failed:", err)
-            alert("Checkout Failed: " + err.message)
+            toast.error("Checkout Failed: " + err.message)
         }
     }
 

@@ -1,87 +1,58 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+@layer base {
+    :root {
+        /* Quantum Light V2 - Deep Rich Forest & High Contrast Gold */
 
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
+        --background: #051818;
+        /* Deepest Ancestral Green (Almost Black) */
+        --foreground: #F2F2F2;
+        /* Bright Mist White */
 
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
+        --card: #081C1C;
+        /* Slightly lighter deep green for cards (Not Grey) */
+        --card-foreground: #F2F2F2;
 
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
+        --popover: #051818;
+        --popover-foreground: #F2F2F2;
 
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
+        --primary: #D1C09B;
+        /* Sacred Gold */
+        --primary-foreground: #051818;
 
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
+        --secondary: #0F2E2E;
+        /* Rich Teal/Green (Less Blue) */
+        --secondary-foreground: #D1C09B;
 
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+        --muted: #0F2E2E;
+        --muted-foreground: #A28E64;
 
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
+        --accent: #D1C09B;
+        --accent-foreground: #051818;
 
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+        --destructive: #7f1d1d;
+        --destructive-foreground: #F2F2F2;
 
-  --radius: 0.75rem;
+        --border: #2D3D3D;
+        /* Visible Green-Grey Border */
+        --input: #0F2E2E;
+        --ring: #D1C09B;
 
-  --font-serif: var(--font-serif);
-  --font-sans: var(--font-sans);
-}
+        --radius: 0.75rem;
 
-:root {
-  /* Quantum Light V2 - Deep Rich Forest & High Contrast Gold */
+        --font-serif: var(--font-serif);
+        --font-sans: var(--font-sans);
+    }
 
-  --background: #051818;
-  /* Deepest Ancestral Green (Almost Black) */
-  --foreground: #F2F2F2;
-  /* Bright Mist White */
+    * {
+        @apply border-border;
+    }
 
-  --card: #081C1C;
-  /* Slightly lighter deep green for cards (Not Grey) */
-  --card-foreground: #F2F2F2;
-
-  --popover: #051818;
-  --popover-foreground: #F2F2F2;
-
-  --primary: #D1C09B;
-  /* Sacred Gold */
-  --primary-foreground: #051818;
-
-  --secondary: #0F2E2E;
-  /* Rich Teal/Green (Less Blue) */
-  --secondary-foreground: #D1C09B;
-
-  --muted: #0F2E2E;
-  --muted-foreground: #A28E64;
-
-  --accent: #D1C09B;
-  --accent-foreground: #051818;
-
-  --destructive: #7f1d1d;
-  --destructive-foreground: #F2F2F2;
-
-  --border: #2D3D3D;
-  /* Visible Green-Grey Border */
-  --input: #0F2E2E;
-  --ring: #D1C09B;
-}
-
-/* Base Styles */
-* {
-  border-color: var(--border);
-}
-
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+    body {
+        @apply bg-background text-foreground;
+    }
 }
 
 h1,
@@ -90,49 +61,49 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: var(--font-serif);
+    font-family: var(--font-serif);
 }
 
 /* --- Mystical Textures & Effects --- */
 
 /* Magical Noise - Reduced opacity for cleaner look */
 .noise-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
-  z-index: 50;
-  opacity: 0.03;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 50;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
 }
 
 /* Deep Forest Gradient - Darker center */
 .bg-mystical-gradient {
-  background: radial-gradient(circle at 50% 0%, #0F2E2E 0%, #051818 100%);
+    background: radial-gradient(circle at 50% 0%, #0F2E2E 0%, #051818 100%);
 }
 
 /* Glassmorphism V2 - Cleaner, Darker */
 .glass-pane {
-  background: rgba(8, 28, 28, 0.7);
-  /* Darker base */
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(209, 192, 155, 0.1);
+    background: rgba(8, 28, 28, 0.7);
+    /* Darker base */
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(209, 192, 155, 0.1);
 }
 
 .glass-card {
-  background: rgba(5, 24, 24, 0.85);
-  /* Much darker card */
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(209, 192, 155, 0.15);
-  /* Gold border */
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  /* Stronger shadow for lift */
+    background: rgba(5, 24, 24, 0.85);
+    /* Much darker card */
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(209, 192, 155, 0.15);
+    /* Gold border */
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    /* Stronger shadow for lift */
 }
 
 /* Golden Glow Text */
 .text-glow {
-  text-shadow: 0 0 10px rgba(209, 192, 155, 0.4);
+    text-shadow: 0 0 10px rgba(209, 192, 155, 0.4);
 }
