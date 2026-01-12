@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { ArrowLeft, Gift, Calendar, User, Star, ChevronRight, LogOut, Ticket, Share2, Instagram, X, Activity, Hand, Thermometer, Droplet, GlassWater, Sun, Info } from "lucide-react"
 import Link from "next/link"
@@ -10,6 +10,7 @@ import { useFirestoreCollection, useFirestoreDoc } from "@/hooks/useFirestore"
 import { where, orderBy, limit } from "firebase/firestore"
 import { Voucher } from "@/types"
 import html2canvas from "html2canvas"
+import { useSearchParams } from "next/navigation"
 import QRCode from "react-qr-code"
 
 // --- Types ---
@@ -45,8 +46,20 @@ interface BiomarkerLog {
 
 // --- Components ---
 
-export default function MemberPortal() {
+export function MemberPortalContent() {
     // State
+    const searchParams = useSearchParams()
+    const whoopStatus = searchParams.get('whoop')
+    const [showWhoopToast, setShowWhoopToast] = useState(false)
+
+    useEffect(() => {
+        if (whoopStatus === 'success') {
+            setShowWhoopToast(true)
+            const timer = setTimeout(() => setShowWhoopToast(false), 5000)
+            return () => clearTimeout(timer)
+        }
+    }, [whoopStatus])
+
     const [email, setEmail] = useState("")
     const [loginStatus, setLoginStatus] = useState<"idle" | "loading" | "error" | "success">("idle")
     const [member, setMember] = useState<Client | null>(null)
@@ -576,7 +589,7 @@ export default function MemberPortal() {
                 </div>
 
                 {/* Biometric Score Section */}
-                <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }} className="mb-8">
+                <motion.div variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }} className="space-y-4">
                     <div className="bg-gradient-to-br from-[#0c2627] to-[#051818] border border-white/10 rounded-2xl p-6 relative overflow-hidden">
                         <div className="absolute top-0 right-0 p-4 opacity-10">
                             <Activity className="w-32 h-32 text-primary" />
@@ -624,6 +637,24 @@ export default function MemberPortal() {
                                 ))}
                             </div>
                         )}
+                    </div>
+
+                    {/* WHOOP Connection Feature */}
+                    <div className="bg-[#0c2627]/50 border border-white/5 rounded-2xl p-6 flex items-center justify-between group hover:border-[#D1C09B]/20 transition-all">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white flex items-center justify-center rounded-xl p-1 shrink-0 overflow-hidden">
+                                <img src="/whoop-logo.png" alt="WHOOP" className="w-full h-full object-contain" />
+                            </div>
+                            <div>
+                                <h4 className="text-white font-medium">WHOOP Integration</h4>
+                                <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">24/7 Bio-verification</p>
+                            </div>
+                        </div>
+                        <Link href="/api/whoop/auth">
+                            <Button className="bg-white text-black hover:bg-white/90 rounded-full px-6 font-bold text-xs">
+                                Connect
+                            </Button>
+                        </Link>
                     </div>
                 </motion.div>
 
@@ -841,6 +872,37 @@ export default function MemberPortal() {
                 )}
             </AnimatePresence>
 
+            {/* WHOOP Success Toast */}
+            <AnimatePresence>
+                {showWhoopToast && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 50 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 50 }}
+                        className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] bg-emerald-500 text-white px-8 py-4 rounded-2xl shadow-2xl flex items-center gap-4 border border-emerald-400/50"
+                    >
+                        <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                            <Activity className="w-4 h-4" />
+                        </div>
+                        <div>
+                            <div className="font-bold text-sm">WHOOP Synchronized</div>
+                            <div className="text-[10px] opacity-80 uppercase tracking-widest font-bold">14-Day Mirror Active</div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
+    )
+}
+
+export default function MemberPortal() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen bg-[#051818] flex items-center justify-center">
+                <div className="animate-pulse text-[#D1C09B] font-serif uppercase tracking-[0.5em]">Sanctuary...</div>
+            </div>
+        }>
+            <MemberPortalContent />
+        </Suspense>
     )
 }
