@@ -29,6 +29,8 @@ const nextConfig: NextConfig = {
       "framer-motion",
       "recharts",
       "@google/generative-ai",
+      "@line/liff",
+      "firebase/firestore",
     ],
   },
 };

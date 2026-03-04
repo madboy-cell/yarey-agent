@@ -394,15 +394,33 @@ export default function GuestLayout({ children }: { children: ReactNode }) {
                 )}
 
                 <div className="relative z-10 pb-20">
-                    {/* Loading spinner */}
+                    {/* Skeleton loading UI — matches guest home layout for instant perceived load */}
                     {loading && !needsEmail ? (
-                        <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-                            <div className="text-xs uppercase tracking-[0.5em]" style={{ color: "var(--g-accent)" }}>
-                                Sanctuary
+                        <div className="max-w-md mx-auto px-5 pt-6 pb-28 animate-pulse space-y-5">
+                            {/* Header skeleton */}
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <div className="h-3 w-20 rounded-full" style={{ background: "var(--g-surface)" }} />
+                                    <div className="h-5 w-36 mt-2 rounded-full" style={{ background: "var(--g-surface)" }} />
+                                </div>
+                                <div className="w-11 h-11 rounded-full" style={{ background: "var(--g-surface)" }} />
                             </div>
-                            <div className="w-7 h-7 border-2 border-t-transparent rounded-full animate-spin"
-                                style={{ borderColor: "var(--g-accent)", borderTopColor: "transparent" }} />
-                            <p className="text-[11px]" style={{ color: "var(--g-text-muted)" }}>Loading...</p>
+
+                            {/* Tier card skeleton */}
+                            <div className="h-28 rounded-2xl" style={{ background: "var(--g-surface)" }} />
+
+                            {/* Quick actions grid skeleton */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="h-24 rounded-2xl" style={{ background: "var(--g-surface)" }} />
+                                <div className="h-24 rounded-2xl" style={{ background: "var(--g-surface)" }} />
+                            </div>
+
+                            {/* Section skeleton */}
+                            <div className="space-y-3">
+                                <div className="h-4 w-28 rounded-full" style={{ background: "var(--g-surface)" }} />
+                                <div className="h-20 rounded-2xl" style={{ background: "var(--g-surface)" }} />
+                                <div className="h-20 rounded-2xl" style={{ background: "var(--g-surface)" }} />
+                            </div>
                         </div>
                     ) : needsEmail && !member ? (
                         /* Email gate — for new LINE users & web users */

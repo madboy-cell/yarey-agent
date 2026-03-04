@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Star, User, X, Sparkles, Calendar, Ticket, Activity, ChevronRight, ExternalLink, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
@@ -38,6 +38,9 @@ export default function GuestHome() {
         window.location.href = whoopConnectUrl
     }, [whoopConnectUrl, platform])
 
+    const whoopStatusRef = useRef(whoopStatus)
+    whoopStatusRef.current = whoopStatus
+
     useEffect(() => {
         if (!member?.id) { setWhoopStatus("not_connected"); return }
         const checkStatus = async () => {
@@ -53,13 +56,13 @@ export default function GuestHome() {
 
         // Re-check when user returns from external browser (LINE LIFF OAuth flow)
         const onVisibility = () => {
-            if (document.visibilityState === "visible" && whoopStatus === "not_connected") {
+            if (document.visibilityState === "visible" && whoopStatusRef.current === "not_connected") {
                 checkStatus()
             }
         }
         document.addEventListener("visibilitychange", onVisibility)
         return () => document.removeEventListener("visibilitychange", onVisibility)
-    }, [member?.id, whoopStatus])
+    }, [member?.id]) // removed whoopStatus — same loop bug as whoop page
 
     // ─── Not registered (shouldn't happen with auto-register, but safety fallback) ───
     // This shouldn't show — layout handles auth gate. Safety fallback.

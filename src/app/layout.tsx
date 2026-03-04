@@ -82,6 +82,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="scroll-smooth">
+      <head>
+        {/* DNS Preconnect — start TLS handshake early for LIFF, LINE APIs, Firestore */}
+        <link rel="preconnect" href="https://api.line.me" />
+        <link rel="preconnect" href="https://static.line-scdn.net" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://firestore.googleapis.com" />
+        <link rel="dns-prefetch" href="https://api.line.me" />
+        <link rel="dns-prefetch" href="https://static.line-scdn.net" />
+        <link rel="dns-prefetch" href="https://liff.line.me" />
+      </head>
       <body className={cn(
         "min-h-screen bg-background font-sans antialiased bg-mystical-gradient",
         cormorant.variable,
