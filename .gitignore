@@ -42,3 +42,4 @@ next-env.d.ts
 .gbp-tokens.json
 .gbp-session.json
 .firebase/
+.github/workflows/
