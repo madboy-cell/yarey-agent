@@ -78,11 +78,25 @@ export function useFirestoreDoc<T>(collectionName: string, docId: string) {
     return { data, loading, error }
 }
 
+// Firestore rejects `undefined` values — strip them recursively
+function stripUndefined(obj: any): any {
+    if (obj === null || obj === undefined) return obj
+    if (Array.isArray(obj)) return obj.map(stripUndefined)
+    if (typeof obj === 'object' && !(obj instanceof Date)) {
+        const clean: any = {}
+        for (const [k, v] of Object.entries(obj)) {
+            if (v !== undefined) clean[k] = stripUndefined(v)
+        }
+        return clean
+    }
+    return obj
+}
+
 export function useFirestoreCRUD(collectionName: string) {
     const add = async (data: any) => {
         try {
             const ref = collection(db, collectionName)
-            const res = await addDoc(ref, data)
+            const res = await addDoc(ref, stripUndefined(data))
             return res.id
         } catch (err) {
             console.error("Add Error:", err)
@@ -93,7 +107,7 @@ export function useFirestoreCRUD(collectionName: string) {
     const update = async (id: string, data: any) => {
         try {
             const ref = doc(db, collectionName, id)
-            await updateDoc(ref, data)
+            await updateDoc(ref, stripUndefined(data))
         } catch (err) {
             console.error("Update Error:", err)
             throw err
