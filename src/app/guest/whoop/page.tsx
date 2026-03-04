@@ -93,6 +93,9 @@ export default function GuestWhoop() {
     const lookupKey = member?.id || ""
 
     // ─── Check Connection ───
+    const stateRef = useRef(state)
+    stateRef.current = state
+
     useEffect(() => {
         if (!lookupKey) { setState("not_connected"); return }
         const checkConnection = async () => {
@@ -101,7 +104,10 @@ export default function GuestWhoop() {
                 const data = await res.json()
                 if (data.connected) {
                     setSessionId(data.sessionId || lookupKey)
-                    setState("ready")
+                    // Only transition to "ready" if we haven't already synced or started syncing
+                    if (stateRef.current === "loading" || stateRef.current === "not_connected") {
+                        setState("ready")
+                    }
                 } else {
                     setState("not_connected")
                 }
@@ -113,13 +119,14 @@ export default function GuestWhoop() {
 
         // Re-check when user returns from external browser (LINE LIFF OAuth flow)
         const onVisibility = () => {
-            if (document.visibilityState === "visible" && state === "not_connected") {
+            if (document.visibilityState === "visible" &&
+                (stateRef.current === "not_connected" || stateRef.current === "loading")) {
                 checkConnection()
             }
         }
         document.addEventListener("visibilitychange", onVisibility)
         return () => document.removeEventListener("visibilitychange", onVisibility)
-    }, [lookupKey, state])
+    }, [lookupKey]) // ← removed `state` — was causing checkConnection to reset state on every sync
 
     // ─── Sync ───
     const handleSync = async () => {
