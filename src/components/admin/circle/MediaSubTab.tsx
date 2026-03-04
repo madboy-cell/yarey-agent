@@ -162,7 +162,6 @@ export const MediaSubTab = ({ bookings, expenses, treatments }: Props) => {
 
             // Check if visit date is strictly past
             if (m.visitDate < todayStr) {
-                console.log(`[Auto-visit] ${m.name} — visit date ${m.visitDate} is past, advancing to visited`)
                 await mediaOps.update(m.id, { status: "visited" })
                 return
             }
@@ -172,7 +171,6 @@ export const MediaSubTab = ({ bookings, expenses, treatments }: Props) => {
                 const [h, min] = m.visitTime.split(":").map(Number)
                 const visitMinutes = h * 60 + (min || 0)
                 if (nowMinutes >= visitMinutes) {
-                    console.log(`[Auto-visit] ${m.name} — visit time ${m.visitTime} has passed, advancing to visited`)
                     await mediaOps.update(m.id, { status: "visited" })
                 }
             }

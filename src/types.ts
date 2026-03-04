@@ -43,7 +43,7 @@ export interface Booking {
     therapistId?: string | null
     therapistCostSnapshot?: number // How much this booking costs in labor
     paymentMethod?: "Cash" | "Transfer" | "Credit Card" | string
-    items?: any[]
+    items?: { name: string; price: number; qty: number }[]
     // Partner / Media attribution
     partnerId?: string | null       // CirclePartner.id
     mediaId?: string | null         // CircleMedia.id
@@ -123,9 +123,9 @@ export interface Session {
     email: string
     score: number
     pillarName: string
-    metrics: any
-    protocol: any[]
-    timestamp: any
+    metrics: Record<string, any>    // eslint-disable-line @typescript-eslint/no-explicit-any
+    protocol: Record<string, unknown>[]
+    timestamp: any                  // eslint-disable-line @typescript-eslint/no-explicit-any — Firestore Timestamp
     dataSource?: string
     // v8.1 fields
     clientId?: string

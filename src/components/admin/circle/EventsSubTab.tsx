@@ -140,7 +140,6 @@ export const EventsSubTab = ({ bookings, expenses, salesmen }: Props) => {
             if (!allDatesPast) return
 
             autoCompletedRef.current.add(ev.id)
-            console.log(`[Events] Auto-completing past event: ${ev.title}`)
 
             // Mark as completed with expected guests as actual attendance
             // Expense already created at confirmation — no duplication

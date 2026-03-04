@@ -43,3 +43,5 @@ next-env.d.ts
 .gbp-session.json
 .firebase/
 .github/workflows/
+firebase-debug.log
+*.bak
