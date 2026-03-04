@@ -18,6 +18,8 @@ export async function GET(request: Request) {
             'read:profile',
             'read:recovery',
             'read:sleep',
+            'read:cycles',
+            'read:workout',
         ].join(' ');
 
         // Pass memberId AND platform in state so callback can redirect correctly

@@ -79,6 +79,7 @@ const pillarStyle = (p: string) =>
 export default function GuestWhoop() {
     const { member, platform } = useGuest()
     const [state, setState] = useState<PageState>("loading")
+    const [errorMsg, setErrorMsg] = useState<string | null>(null)
     const [metrics, setMetrics] = useState<WhoopMetrics | null>(null)
     const [history, setHistory] = useState<WhoopDay[]>([])
     const [lastSynced, setLastSynced] = useState<string | null>(null)
@@ -122,11 +123,19 @@ export default function GuestWhoop() {
 
     // ─── Sync ───
     const handleSync = async () => {
-        if (!sessionId) return
+        if (!sessionId) {
+            console.error("[WHOOP Sync] No sessionId — cannot sync")
+            setErrorMsg("No session found. Try disconnecting and reconnecting WHOOP.")
+            return
+        }
+        console.log(`[WHOOP Sync] Starting sync with sessionId: ${sessionId}`)
         setState("syncing")
+        setErrorMsg(null)
         try {
             const res = await fetch(`/api/whoop/metrics?sessionId=${encodeURIComponent(sessionId)}`)
+            console.log(`[WHOOP Sync] API response status: ${res.status}`)
             const data = await res.json()
+            console.log(`[WHOOP Sync] API response:`, data.success ? "success" : data.error || "unknown error")
             if (data.success) {
                 setMetrics({ ...data.metrics, dataSource: data.dataSource, baseline: data.baseline })
                 setLastSynced(data.last_synced)
@@ -140,9 +149,13 @@ export default function GuestWhoop() {
                 savedSyncRef.current = false // allow new save
                 setState("synced")
             } else {
+                console.error("[WHOOP Sync] API returned error:", data.error)
+                setErrorMsg(data.error || "Failed to fetch WHOOP data. Please try again.")
                 setState("ready")
             }
-        } catch {
+        } catch (err: any) {
+            console.error("[WHOOP Sync] Fetch error:", err)
+            setErrorMsg(err?.message || "Network error syncing WHOOP. Please try again.")
             setState("ready")
         }
     }
@@ -389,6 +402,11 @@ export default function GuestWhoop() {
                                 style={{ background: "linear-gradient(135deg, #34d399, #06b6d4)", color: "#000" }}>
                                 {"\uD83D\uDD04"} Sync WHOOP
                             </button>
+                            {errorMsg && (
+                                <div className="mx-4 p-3 rounded-xl text-xs leading-relaxed" style={{ background: "rgba(239,68,68,0.1)", color: "#f87171", border: "1px solid rgba(239,68,68,0.2)" }}>
+                                    ⚠️ {errorMsg}
+                                </div>
+                            )}
                         </motion.div>
                     )}
 
