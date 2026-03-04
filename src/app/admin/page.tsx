@@ -1,18 +1,22 @@
 "use client"
 
 import { useEffect, useState, useMemo, Suspense } from "react"
+import dynamic from "next/dynamic"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Container } from "@/components/layout/container"
-import { PulseTab } from "@/components/admin/PulseTab"
-import { MenuTab } from "@/components/admin/MenuTab"
-import { BotanicalsTab } from "@/components/admin/BotanicalsTab"
-import { LabTab } from "@/components/admin/LabTab"
-import { MembersTab } from "@/components/admin/MembersTab"
-import { FinanceTab } from "@/components/admin/FinanceTab"
-import { VouchersTab } from "@/components/admin/VouchersTab"
-import { CircleTab } from "@/components/admin/CircleTab"
+
+// ─── Lazy-loaded admin tabs (only active tab downloads its JS) ───
+const tabLoader = () => <div className="animate-pulse space-y-4 py-8">{[...Array(3)].map((_, i) => <div key={i} className="h-24 rounded-2xl bg-white/5" />)}</div>
+const PulseTab = dynamic(() => import("@/components/admin/PulseTab").then(m => ({ default: m.PulseTab })), { loading: tabLoader })
+const MenuTab = dynamic(() => import("@/components/admin/MenuTab").then(m => ({ default: m.MenuTab })), { loading: tabLoader })
+const BotanicalsTab = dynamic(() => import("@/components/admin/BotanicalsTab").then(m => ({ default: m.BotanicalsTab })), { loading: tabLoader })
+const LabTab = dynamic(() => import("@/components/admin/LabTab").then(m => ({ default: m.LabTab })), { loading: tabLoader })
+const MembersTab = dynamic(() => import("@/components/admin/MembersTab").then(m => ({ default: m.MembersTab })), { loading: tabLoader })
+const FinanceTab = dynamic(() => import("@/components/admin/FinanceTab").then(m => ({ default: m.FinanceTab })), { loading: tabLoader })
+const VouchersTab = dynamic(() => import("@/components/admin/VouchersTab").then(m => ({ default: m.VouchersTab })), { loading: tabLoader })
+const CircleTab = dynamic(() => import("@/components/admin/CircleTab").then(m => ({ default: m.CircleTab })), { loading: tabLoader })
 
 import { Button } from "@/components/ui/button"
 import {

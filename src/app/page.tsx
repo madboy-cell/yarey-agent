@@ -149,6 +149,7 @@ export default function Home() {
                     {/* Video Background */}
                     <video
                         autoPlay muted loop playsInline
+                        preload="none"
                         className="absolute inset-0 w-full h-full object-cover"
                         style={{ filter: "saturate(0.75) brightness(0.5) contrast(1.1)" }}
                         aria-hidden="true"
