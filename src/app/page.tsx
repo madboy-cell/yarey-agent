@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from "react"
 import { motion, useScroll, useTransform, useMotionValue, useSpring, AnimatePresence } from "framer-motion"
 import Link from "next/link"
+import Image from "next/image"
 import { VibeMeter } from "@/components/feature/vibe-meter"
 import { Leaf, MapPin, Phone, Clock, Star, ChevronDown, Sparkles } from "lucide-react"
 import Script from "next/script"
@@ -61,12 +62,12 @@ const jsonLd = {
 }
 
 const SERVICES = [
-    { icon: "🔥", title: "Finnish Sauna", desc: "90°C dry heat with Himalayan salt infusion", accent: "from-orange-500/20 to-red-600/10", glow: "shadow-orange-500/20" },
-    { icon: "🧊", title: "Ice Bath Cold Plunge", desc: "5°C therapeutic cold immersion for recovery", accent: "from-cyan-400/20 to-blue-600/10", glow: "shadow-cyan-500/20" },
-    { icon: "🙏", title: "Thai Massage", desc: "Traditional stretching & pressure point therapy", accent: "from-amber-400/20 to-yellow-600/10", glow: "shadow-amber-500/20" },
-    { icon: "🌿", title: "Herbal Compress", desc: "Warm Thai herbal poultice healing therapy", accent: "from-emerald-500/20 to-green-600/10", glow: "shadow-emerald-500/20" },
-    { icon: "🔄", title: "Contrast Ritual", desc: "Guided fire & ice cycles for autonomic reset", accent: "from-violet-500/20 to-purple-600/10", glow: "shadow-violet-500/20" },
-    { icon: "🌸", title: "Aromatherapy", desc: "Botanical oil massage with curated blends", accent: "from-pink-400/20 to-rose-600/10", glow: "shadow-pink-500/20" },
+    { icon: "/icons/sauna.png", title: "Finnish Sauna", desc: "90°C dry heat with Himalayan salt infusion", accent: "from-orange-500/20 to-red-600/10", glow: "shadow-orange-500/20" },
+    { icon: "/icons/ice-bath.png", title: "Ice Bath Cold Plunge", desc: "5°C therapeutic cold immersion for recovery", accent: "from-cyan-400/20 to-blue-600/10", glow: "shadow-cyan-500/20" },
+    { icon: "/icons/thai-massage.png", title: "Thai Massage", desc: "Traditional stretching & pressure point therapy", accent: "from-amber-400/20 to-yellow-600/10", glow: "shadow-amber-500/20" },
+    { icon: "/icons/herbal-compress.png", title: "Herbal Compress", desc: "Warm Thai herbal poultice healing therapy", accent: "from-emerald-500/20 to-green-600/10", glow: "shadow-emerald-500/20" },
+    { icon: "/icons/contrast-ritual.png", title: "Contrast Ritual", desc: "Guided fire & ice cycles for autonomic reset", accent: "from-violet-500/20 to-purple-600/10", glow: "shadow-violet-500/20" },
+    { icon: "/icons/aromatherapy.png", title: "Aromatherapy", desc: "Botanical oil massage with curated blends", accent: "from-pink-400/20 to-rose-600/10", glow: "shadow-pink-500/20" },
 ]
 
 // ─── Floating Particles Component ───
@@ -142,14 +143,21 @@ function ServiceCard({ service, index }: { service: typeof SERVICES[0]; index: n
                     <div className={`absolute inset-0 bg-gradient-to-br ${service.accent}`} />
                 </div>
 
-                {/* Floating icon */}
-                <motion.span
-                    className="relative text-3xl md:text-4xl block mb-4"
-                    whileHover={{ scale: 1.2, rotate: [0, -10, 10, 0] }}
+                {/* Service icon */}
+                <motion.div
+                    className="relative w-12 h-12 md:w-14 md:h-14 mb-4"
+                    whileHover={{ scale: 1.15, rotate: [0, -5, 5, 0] }}
                     transition={{ type: "spring", stiffness: 400, damping: 15 }}
                 >
-                    {service.icon}
-                </motion.span>
+                    <Image
+                        src={service.icon}
+                        alt={service.title}
+                        width={56}
+                        height={56}
+                        className="w-full h-full object-contain drop-shadow-lg"
+                        loading="lazy"
+                    />
+                </motion.div>
 
                 <h3 className="relative text-sm md:text-base font-semibold text-white/90 mb-2 tracking-wide group-hover:text-white transition-colors duration-500">
                     {service.title}
