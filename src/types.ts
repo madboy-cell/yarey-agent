@@ -74,14 +74,22 @@ export interface Voucher {
     pricePaid: number
     originalPrice?: number
     status: "ISSUED" | "REDEEMED" | "EXPIRED" | "VOID" | "REFUNDED" | string
+    // Gacha fields
+    gachaMachineId?: string
+    gachaPrizeId?: string
     expiresAt?: string
     issuedAt?: string
     redeemedAt?: string
-    type?: "single" | "package"
+    type?: "single" | "package" | "gacha"
     creditsTotal?: number
     creditsRemaining?: number
     recipientName?: string
     clientId?: string
+    // Staff attribution & commission
+    issuedByStaffId?: string     // salesmanId who issued/sold this voucher
+    issuedByStaffName?: string   // display name at time of issue
+    commissionRate?: number      // snapshot of staff commission rate (e.g. 0.05)
+    commissionAmount?: number    // calculated: pricePaid * commissionRate
     // Gift tracking
     giftedFrom?: string          // clientId of the sender
     giftedFromName?: string      // display name of the sender
@@ -306,4 +314,34 @@ export interface CircleGoals {
     totalBookings: number
     revenue: number
     coldDays: number
+}
+
+// ─── GACHA MACHINE ─────────────────────────────
+export interface GachaPrize {
+    id: string
+    type: "discount" | "treatment"
+    discountPercent?: number
+    treatmentId?: string
+    treatmentTitle?: string
+    label: string
+    weight: number
+    color: string
+}
+
+export interface GachaMachine {
+    id: string
+    title: string
+    description?: string
+    prizes: GachaPrize[]
+    targetType: "all" | "specific"
+    targetMemberIds?: string[]
+    active: boolean
+    expiresAt: string
+    createdAt: string
+    playedBy: Record<string, {
+        playedAt: string
+        prizeId: string
+        voucherId: string
+        prizeName: string
+    }>
 }

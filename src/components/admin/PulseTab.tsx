@@ -9,18 +9,19 @@ import { useFirestoreCRUD, useFirestoreCollection } from "@/hooks/useFirestore";
 import { generateMonthlyReport } from "@/lib/pdf/generateMonthlyReport"
 
 // Types
-import { Booking, Salesman, Treatment, Expense, CirclePartner, CircleMedia, CircleEvent, CircleSupplier } from "@/types"
+import { Booking, Salesman, Treatment, Expense, Voucher, CirclePartner, CircleMedia, CircleEvent, CircleSupplier } from "@/types"
 
 interface PulseProps {
     bookings: Booking[]
     treatments: any[]
     salesmen: Salesman[]
     expenses: Expense[]
+    vouchers: Voucher[]
     targetSettings?: { monthlyGoals: Record<string, number> } | null
     onEdit: (booking: Booking) => void
 }
 
-export function PulseTab({ bookings, treatments, salesmen, expenses, targetSettings, onEdit }: PulseProps) {
+export function PulseTab({ bookings, treatments, salesmen, expenses, vouchers, targetSettings, onEdit }: PulseProps) {
     const [viewMode, setViewMode] = useState<"live" | "management">("live")
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
     const [expandedMonth, setExpandedMonth] = useState<string | null>(null)
@@ -154,6 +155,40 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
             monthlyData[monthName].days[dayNum].bookings += 1
         })
 
+        // Inject VOUCHER revenue per month
+        // Only count vouchers that the business sold (not gifted-from, not bound/partner codes)
+        vouchers.forEach(v => {
+            if (!v.issuedAt || !v.pricePaid || v.pricePaid <= 0) return
+            if (v.giftedFrom) return // gifted vouchers aren't new revenue
+            if (v.boundType) return  // partner/media codes aren't direct revenue
+
+            const d = new Date(v.issuedAt)
+            if (d.getFullYear() !== selectedYear) return
+
+            const monthName = months[d.getMonth()]
+            monthlyData[monthName].revenue += v.pricePaid
+
+            // Attribute to issuing staff in leaderboard
+            if (v.issuedByStaffId) {
+                const s = salesmen.find(sm => sm.id === v.issuedByStaffId)
+                const sName = s ? s.nickname : (v.issuedByStaffName || "Unknown")
+                monthlyData[monthName].topStaff[sName] = (monthlyData[monthName].topStaff[sName] || 0) + v.pricePaid
+            }
+
+            // Attribute to recipient in guest leaderboard
+            if (v.recipientName) {
+                monthlyData[monthName].topGuests[v.recipientName] = (monthlyData[monthName].topGuests[v.recipientName] || 0) + v.pricePaid
+            }
+
+            // Source tracking
+            const source = "Voucher Sale"
+            if (!monthlyData[monthName].sources[source]) {
+                monthlyData[monthName].sources[source] = { count: 0, revenue: 0 }
+            }
+            monthlyData[monthName].sources[source].count += 1
+            monthlyData[monthName].sources[source].revenue += v.pricePaid
+        })
+
         // Inject event revenue per month from circleEvents
         circleEvents.forEach(ev => {
             if (ev.status !== "completed" || ev.financialType !== "we_earn") return
@@ -168,7 +203,7 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
         })
 
         return monthlyData
-    }, [bookings, treatments, salesmen, selectedYear, circleEvents])
+    }, [bookings, treatments, salesmen, selectedYear, circleEvents, vouchers])
 
     // --- PREVIOUS YEAR DATA (for YoY Comparison) ---
     const previousYearData = useMemo(() => {
@@ -227,7 +262,16 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
         })
         .reduce((sum, b) => sum + (b.commissionAmount || 0), 0)
 
-    const totalYearlyLaborCost = (totalPayroll * 12) + totalYearlyCommissions
+    // Also include voucher commissions in labor cost
+    const totalYearlyVoucherCommissions = vouchers
+        .filter(v => {
+            if (!v.issuedAt || !v.commissionAmount) return false
+            const d = new Date(v.issuedAt)
+            return d.getFullYear() === selectedYear
+        })
+        .reduce((sum, v) => sum + (v.commissionAmount || 0), 0)
+
+    const totalYearlyLaborCost = (totalPayroll * 12) + totalYearlyCommissions + totalYearlyVoucherCommissions
     const laborCostRatio = totalYearlyRevenue > 0 ? Math.round((totalYearlyLaborCost / totalYearlyRevenue) * 100) : 0
 
     // --- CANCELLATION RATE ---
@@ -305,6 +349,16 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                 current.serviceComm += (b.therapistCostSnapshot || 0)
                 staffDetailsMap.set(b.therapistId, current)
             }
+        })
+
+        // Add Voucher Commissions
+        vouchers.forEach(v => {
+            if (!v.issuedAt || !v.issuedByStaffId || !v.commissionAmount) return
+            const d = new Date(v.issuedAt)
+            if (d.getFullYear() !== selectedYear || d.getMonth() !== monthIndex) return
+            const current = staffDetailsMap.get(v.issuedByStaffId) || { base: 0, salesComm: 0, serviceComm: 0 }
+            current.salesComm += v.commissionAmount
+            staffDetailsMap.set(v.issuedByStaffId, current)
         })
 
         const staffPayrolls: Array<{ name: string; role: string; base: number; comms: number; service: number; totalPayout: number }> = []
@@ -531,7 +585,7 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
 
 
     // 1. Calculate Revenue (Confirmed/Arrived/Complete)
-    const totalRevenue = filteredBookings
+    const bookingRevenue = filteredBookings
         .filter(b => ["Confirmed", "Arrived", "In Ritual", "Complete"].includes(b.status))
         .reduce((sum, b) => {
             // Priority: Snapshot > Catalog Lookup > 0
@@ -540,6 +594,24 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
             const treat = treatments.find(t => t.title === b.treatment)
             return sum + (treat ? treat.price_thb * b.guests : 0)
         }, 0)
+
+    // Add voucher revenue to live pulse total
+    const voucherRevenue = (() => {
+        const todayStr = new Date().toLocaleDateString("en-CA")
+        const now = new Date()
+        return vouchers
+            .filter(v => {
+                if (!v.issuedAt || !v.pricePaid || v.pricePaid <= 0) return false
+                if (v.giftedFrom || v.boundType) return false
+                const d = new Date(v.issuedAt)
+                if (timeRange === "today") return d.toLocaleDateString("en-CA") === todayStr
+                if (timeRange === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+                return true // "all"
+            })
+            .reduce((sum, v) => sum + v.pricePaid, 0)
+    })()
+
+    const totalRevenue = bookingRevenue + voucherRevenue
 
     // 2. Ritual Mix
     const ritualCounts: Record<string, number> = {}

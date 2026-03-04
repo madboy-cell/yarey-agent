@@ -9,6 +9,7 @@ export interface PayslipData {
     earnings: {
         baseSalary: number
         salesCommission: number
+        voucherCommission?: number
         salesCount: number
         serviceFee: number
         other: number
@@ -63,6 +64,7 @@ export const generatePayslip = async (data: PayslipData) => {
     const earningsBody = [
         ["Base Salary", "", `THB ${data.earnings.baseSalary.toLocaleString()}`],
         [`Sales Commission (${data.earnings.salesCount} sales)`, "", `THB ${data.earnings.salesCommission.toLocaleString()}`],
+        ...(data.earnings.voucherCommission ? [["Voucher Sales Commission", "", `THB ${data.earnings.voucherCommission.toLocaleString()}`]] : []),
         ["Service/Therapy Fees", "", `THB ${data.earnings.serviceFee.toLocaleString()}`],
         ["Other Allowances", "", `THB ${data.earnings.other.toLocaleString()}`]
     ]

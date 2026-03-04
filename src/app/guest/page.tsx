@@ -1,11 +1,14 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Star, User, X, Sparkles, Calendar, Ticket, Activity, ChevronRight, ExternalLink, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useGuest } from "./layout"
 import { determineTier, TIERS } from "@/lib/loyalty"
+import { useFirestoreCollection } from "@/hooks/useFirestore"
+import { GachaMachine } from "@/types"
+import { GachaGame } from "@/components/guest/GachaGame"
 
 // ─── Tier Aesthetics ─────────────────────────
 const tierStyle: Record<string, { bg: string; glow: string; accent: string; textMain: string; textSub: string }> = {
@@ -19,6 +22,36 @@ const tierStyle: Record<string, { bg: string; glow: string; accent: string; text
 export default function GuestHome() {
     const { profile, member, vouchers, bookings, isRegistered, platform } = useGuest()
     const [showTiers, setShowTiers] = useState(false)
+
+    // ─── Gacha Machine ───
+    const { data: gachaMachines, loading: gachaLoading, error: gachaError } = useFirestoreCollection<GachaMachine>("gacha_machines")
+    const eligibleMachine = useMemo(() => {
+        console.log("[Gacha Debug]", {
+            machinesCount: gachaMachines.length,
+            gachaLoading,
+            gachaError,
+            memberId: member?.id,
+            machines: gachaMachines.map(m => ({
+                id: m.id,
+                title: m.title,
+                active: m.active,
+                expiresAt: m.expiresAt,
+                expired: new Date(m.expiresAt) < new Date(),
+                targetType: m.targetType,
+                targetMemberIds: m.targetMemberIds,
+                playedBy: m.playedBy,
+                memberPlayed: member?.id ? !!m.playedBy?.[member.id] : "no member",
+            })),
+        })
+        if (!member?.id) return null
+        return gachaMachines.find(m => {
+            if (!m.active) return false
+            if (new Date(m.expiresAt) < new Date()) return false
+            if (m.targetType === "specific" && !m.targetMemberIds?.includes(member.id)) return false
+            if (m.playedBy?.[member.id]) return false
+            return true
+        }) || null
+    }, [gachaMachines, member?.id, gachaLoading, gachaError])
 
     // ─── WHOOP status (uses member.id as key) ───
     const [whoopStatus, setWhoopStatus] = useState<"checking" | "connected" | "not_connected" | "error">("checking")
@@ -196,6 +229,28 @@ export default function GuestHome() {
                             <div className="text-[8px] uppercase tracking-wider mt-0.5" style={{ color: "var(--g-text-muted)" }}>{label}</div>
                         </div>
                     ))}
+                </div>
+
+                {/* ═══ Gacha Game ═══ */}
+                {eligibleMachine && member && (
+                    <GachaGame machine={eligibleMachine} memberId={member.id} memberName={member.name} />
+                )}
+
+                {/* DEBUG: Gacha Status — REMOVE AFTER TESTING */}
+                <div style={{ background: "rgba(255,0,0,0.1)", border: "1px solid rgba(255,0,0,0.3)", borderRadius: 12, padding: 10, fontSize: 10, color: "#f87171", fontFamily: "monospace" }}>
+                    <div>🔍 Gacha Debug</div>
+                    <div>machines: {gachaMachines.length} | loading: {String(gachaLoading)} | error: {gachaError ? String(gachaError) : "none"}</div>
+                    <div>memberId: {member?.id || "none"}</div>
+                    {gachaMachines.map(m => (
+                        <div key={m.id} style={{ marginTop: 4 }}>
+                            [{m.title}] active:{String(m.active)} | expired:{String(new Date(m.expiresAt) < new Date())} | target:{m.targetType}
+                            {m.targetType === "specific" && ` | ids:${m.targetMemberIds?.join(",")}`}
+                            | played:{member?.id ? String(!!m.playedBy?.[member.id]) : "?"}
+                        </div>
+                    ))}
+                    {gachaMachines.length === 0 && <div>⚠️ No machines found in Firestore</div>}
+                    {eligibleMachine && <div style={{ color: "#4ade80" }}>✅ Eligible: {eligibleMachine.title}</div>}
+                    {!eligibleMachine && gachaMachines.length > 0 && <div>❌ No eligible machine for this member</div>}
                 </div>
 
                 {/* ═══ Upcoming Booking ═══ */}

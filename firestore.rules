@@ -107,6 +107,13 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    // Gacha Machines
+    // Read: public (guest LIFF eligibility check)
+    // Write: public (admin creates + play API updates playedBy via client SDK)
+    match /gacha_machines/{document} {
+      allow read, write: if true;
+    }
+
     // Default: Deny all other access unless authenticated
     match /{document=**} {
       allow read, write: if isAuthenticated();

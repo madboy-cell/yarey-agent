@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useFirestoreCRUD, useFirestoreDoc, useFirestoreCollection } from "@/hooks/useFirestore"
-import { Booking, Salesman } from "@/types"
+import { Booking, Salesman, Voucher } from "@/types"
 import { generatePayslip } from "@/lib/pdf/generatePayslip"
 
 // Types
@@ -20,6 +20,7 @@ interface PayrollEntry {
     baseSalary: number
     commissionCount: number
     salesComm: number
+    voucherComm: number
     hourlyRate?: number
     serviceHours: number
     serviceComm: number
@@ -46,9 +47,10 @@ interface FinanceTabProps {
     bookings: Booking[]
     salesmen: Salesman[]
     expenses: Expense[]
+    vouchers: Voucher[]
 }
 
-export function FinanceTab({ bookings, salesmen, expenses }: FinanceTabProps) {
+export function FinanceTab({ bookings, salesmen, expenses, vouchers }: FinanceTabProps) {
     // Auth
     const [isUnlocked, setIsUnlocked] = useState(false)
     const [pinInput, setPinInput] = useState("")
@@ -132,7 +134,7 @@ export function FinanceTab({ bookings, salesmen, expenses }: FinanceTabProps) {
             period: selectedMonth,
             generatedDate: new Date().toLocaleDateString(),
             staff: { name: entry.name, role: entry.role, id: entry.staffId },
-            earnings: { baseSalary: entry.baseSalary, salesCommission: entry.salesComm, salesCount: entry.commissionCount, serviceFee: entry.serviceComm, other: 0 },
+            earnings: { baseSalary: entry.baseSalary, salesCommission: entry.salesComm, voucherCommission: entry.voucherComm, salesCount: entry.commissionCount, serviceFee: entry.serviceComm, other: 0 },
             deductions: { tax: 0, socialSecurity: 0, other: 0 },
             netPay: entry.totalPayout
         })
@@ -188,7 +190,7 @@ export function FinanceTab({ bookings, salesmen, expenses }: FinanceTabProps) {
             staffMap.set(s.id, {
                 staffId: s.id, name: s.nickname, role: s.role || "sales",
                 baseSalary: s.baseSalary || 0, hourlyRate: s.hourlyRate || 0,
-                commissionCount: 0, salesComm: 0, serviceHours: 0, serviceComm: 0,
+                commissionCount: 0, salesComm: 0, voucherComm: 0, serviceHours: 0, serviceComm: 0,
                 totalPayout: s.baseSalary || 0
             })
         })
@@ -214,8 +216,29 @@ export function FinanceTab({ bookings, salesmen, expenses }: FinanceTabProps) {
             }
         })
 
-        return { staffEntries: Array.from(staffMap.values()), outsource: { hours: outsourceHours, cost: outsourceCost }, totalRevenue }
-    }, [bookings, salesmen, selectedMonth])
+        // Include voucher commissions in staff payroll
+        const filteredVouchers = vouchers.filter(v => {
+            if (!v.issuedAt) return false
+            return v.issuedAt.startsWith(selectedMonth)
+        })
+
+        // Add voucher revenue to total
+        const voucherRevenue = filteredVouchers
+            .filter(v => v.pricePaid > 0 && !v.giftedFrom && !v.boundType)
+            .reduce((sum, v) => sum + v.pricePaid, 0)
+
+        filteredVouchers.forEach(v => {
+            if (!v.issuedByStaffId || !v.commissionAmount) return
+            if (staffMap.has(v.issuedByStaffId)) {
+                const entry = staffMap.get(v.issuedByStaffId)!
+                entry.voucherComm += v.commissionAmount
+                entry.totalPayout += v.commissionAmount
+                entry.commissionCount += 1
+            }
+        })
+
+        return { staffEntries: Array.from(staffMap.values()), outsource: { hours: outsourceHours, cost: outsourceCost }, totalRevenue: totalRevenue + voucherRevenue }
+    }, [bookings, salesmen, selectedMonth, vouchers])
 
     const activeExpenses = expenses.filter(e => e.month === selectedMonth)
     const totalExpenses = activeExpenses.reduce((sum, e) => sum + e.amount, 0)
@@ -518,6 +541,7 @@ export function FinanceTab({ bookings, salesmen, expenses }: FinanceTabProps) {
                                         <th className="p-5 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Staff</th>
                                         <th className="p-5 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Base</th>
                                         <th className="p-5 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Sales Comm.</th>
+                                        <th className="p-5 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Voucher Comm.</th>
                                         <th className="p-5 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Service Fees</th>
                                         <th className="p-5 text-[10px] uppercase tracking-widest text-foreground/40 font-bold text-right">Total</th>
                                         <th className="p-5 text-[10px] uppercase tracking-widest text-foreground/40 font-bold text-right w-16"></th>
@@ -534,6 +558,9 @@ export function FinanceTab({ bookings, salesmen, expenses }: FinanceTabProps) {
                                             <td className="p-5">
                                                 <div className="font-mono text-sm text-primary/80">฿{entry.salesComm.toLocaleString()}</div>
                                                 {entry.commissionCount > 0 && <div className="text-[10px] text-foreground/25">{entry.commissionCount} sales</div>}
+                                            </td>
+                                            <td className="p-5">
+                                                <div className="font-mono text-sm text-orange-400/80">฿{entry.voucherComm.toLocaleString()}</div>
                                             </td>
                                             <td className="p-5">
                                                 <div className="font-mono text-sm text-emerald-400/80">฿{entry.serviceComm.toLocaleString()}</div>

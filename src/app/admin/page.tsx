@@ -608,16 +608,16 @@ function AdminDashboardContent() {
                 {activeTab === "botanicals" && <BotanicalsTab elixirs={elixirs} />}
 
                 {activeTab === "vouchers" && (
-                    <VouchersTab vouchers={vouchers} treatments={treatments} clients={clients} onScan={() => setIsScanning(true)} />
+                    <VouchersTab vouchers={vouchers} treatments={treatments} clients={clients} salesmen={salesmen} onScan={() => setIsScanning(true)} />
                 )}
 
                 {activeTab === "analytics" && (
-                    <PulseTab bookings={bookings} treatments={treatments} salesmen={salesmen} expenses={expenses} targetSettings={targetSettings} onEdit={setSelectedBooking} />
+                    <PulseTab bookings={bookings} treatments={treatments} salesmen={salesmen} expenses={expenses} vouchers={vouchers} targetSettings={targetSettings} onEdit={setSelectedBooking} />
                 )}
 
                 {activeTab === "members" && <MembersTab clients={clients} bookings={bookings} vouchers={vouchers} />}
 
-                {activeTab === "finance" && <FinanceTab bookings={bookings} salesmen={salesmen} expenses={expenses} />}
+                {activeTab === "finance" && <FinanceTab bookings={bookings} salesmen={salesmen} expenses={expenses} vouchers={vouchers} />}
 
                 {activeTab === "lab" && <LabTab sessions={sessions} />}
 
