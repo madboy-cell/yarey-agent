@@ -4,41 +4,35 @@
 
 @layer base {
     :root {
-        /* Quantum Light V2 - Deep Rich Forest & High Contrast Gold */
+        /* Yarey — Aman-Inspired Deep Sanctuary Palette */
 
-        --background: #051818;
-        /* Deepest Ancestral Green (Almost Black) */
-        --foreground: #F2F2F2;
-        /* Bright Mist White */
+        --background: #060F0F;
+        --foreground: #E8E4DF;
 
-        --card: #081C1C;
-        /* Slightly lighter deep green for cards (Not Grey) */
-        --card-foreground: #F2F2F2;
+        --card: #0A1616;
+        --card-foreground: #E8E4DF;
 
-        --popover: #051818;
-        --popover-foreground: #F2F2F2;
+        --popover: #060F0F;
+        --popover-foreground: #E8E4DF;
 
-        --primary: #D1C09B;
-        /* Sacred Gold */
-        --primary-foreground: #051818;
+        --primary: #C4A96A;
+        --primary-foreground: #060F0F;
 
-        --secondary: #0F2E2E;
-        /* Rich Teal/Green (Less Blue) */
-        --secondary-foreground: #D1C09B;
+        --secondary: #0D1F1F;
+        --secondary-foreground: #C4A96A;
 
-        --muted: #0F2E2E;
-        --muted-foreground: #A28E64;
+        --muted: #0D1F1F;
+        --muted-foreground: #8A7B5A;
 
-        --accent: #D1C09B;
-        --accent-foreground: #051818;
+        --accent: #C4A96A;
+        --accent-foreground: #060F0F;
 
         --destructive: #7f1d1d;
-        --destructive-foreground: #F2F2F2;
+        --destructive-foreground: #E8E4DF;
 
-        --border: #2D3D3D;
-        /* Visible Green-Grey Border */
-        --input: #0F2E2E;
-        --ring: #D1C09B;
+        --border: #1A2A2A;
+        --input: #0D1F1F;
+        --ring: #C4A96A;
 
         --radius: 0.75rem;
 
@@ -53,6 +47,25 @@
     body {
         @apply bg-background text-foreground;
     }
+
+    /* Force dark backgrounds on all form elements */
+    input,
+    select,
+    textarea {
+        background-color: var(--input) !important;
+        color: var(--foreground) !important;
+        border-color: var(--border) !important;
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+        color: rgba(232, 228, 223, 0.25) !important;
+    }
+
+    select option {
+        background-color: var(--card);
+        color: var(--foreground);
+    }
 }
 
 h1,
@@ -64,9 +77,7 @@ h6 {
     font-family: var(--font-serif);
 }
 
-/* --- Mystical Textures & Effects --- */
-
-/* Magical Noise - Reduced opacity for cleaner look */
+/* Noise Overlay — Ultra Subtle Film Grain */
 .noise-overlay {
     position: fixed;
     top: 0;
@@ -75,35 +86,110 @@ h6 {
     height: 100vh;
     pointer-events: none;
     z-index: 50;
-    opacity: 0.03;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.025;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Deep Forest Gradient - Darker center */
+/* Deep Gradient — Subtle Cinematic Vignette */
 .bg-mystical-gradient {
-    background: radial-gradient(circle at 50% 0%, #0F2E2E 0%, #051818 100%);
+    background: radial-gradient(ellipse 120% 100% at 50% 0%, #0D1F1F 0%, #060F0F 70%);
 }
 
-/* Glassmorphism V2 - Cleaner, Darker */
+/* Glass Panels */
 .glass-pane {
-    background: rgba(8, 28, 28, 0.7);
-    /* Darker base */
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(209, 192, 155, 0.1);
+    background: rgba(6, 15, 15, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(196, 169, 106, 0.08);
 }
 
 .glass-card {
-    background: rgba(5, 24, 24, 0.85);
-    /* Much darker card */
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(209, 192, 155, 0.15);
-    /* Gold border */
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    /* Stronger shadow for lift */
+    background: rgba(6, 15, 15, 0.9);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(196, 169, 106, 0.1);
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
 }
 
-/* Golden Glow Text */
+/* Cinematic Video Container */
+.video-cinematic {
+    object-fit: cover;
+    width: 100%;
+    height: 100%;
+    filter: saturate(0.7) brightness(0.6) contrast(1.1);
+    transition: filter 1.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.video-cinematic:hover {
+    filter: saturate(0.85) brightness(0.7) contrast(1.05);
+}
+
+/* Horizontal Rule — Aman Style */
+.aman-rule {
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--primary) 50%, transparent 100%);
+    opacity: 0.15;
+}
+
+/* Text Glow */
 .text-glow {
-    text-shadow: 0 0 10px rgba(209, 192, 155, 0.4);
+    text-shadow: 0 0 30px rgba(196, 169, 106, 0.2);
+}
+
+/* Scroll-Triggered Reveal */
+.reveal-up {
+    opacity: 0;
+    transform: translateY(40px);
+    transition: all 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal-up.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Cinematic Letterbox Bars */
+.letterbox::before,
+.letterbox::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 8vh;
+    background: var(--background);
+    z-index: 10;
+    pointer-events: none;
+}
+
+.letterbox::before {
+    top: 0;
+}
+
+.letterbox::after {
+    bottom: 0;
+}
+
+/* Smooth Scrollbar */
+::-webkit-scrollbar {
+    width: 4px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--primary);
+    opacity: 0.3;
+    border-radius: 2px;
+}
+
+/* Hide scrollbar for horizontal tab bars */
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
 }

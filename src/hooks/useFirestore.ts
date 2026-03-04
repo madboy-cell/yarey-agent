@@ -8,8 +8,6 @@ import {
     deleteDoc,
     doc,
     query,
-    orderBy,
-    where,
     setDoc,
     QueryConstraint
 } from "firebase/firestore"
@@ -20,31 +18,31 @@ export function useFirestoreCollection<T>(collectionName: string, constraints: Q
     const [error, setError] = useState<any>(null)
 
     useEffect(() => {
-        try {
-            const ref = collection(db, collectionName)
-            // Note: In real app we might want memoized constraints, but for now strict array dependency is okay if static
-            const q = query(ref, ...constraints)
-
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                const results: any[] = []
-                snapshot.forEach((doc) => {
-                    results.push({ id: doc.id, ...doc.data() })
-                })
-                setData(results as T[])
-                setLoading(false)
-            }, (err) => {
-                console.error("Firestore Error:", err)
-                setError(err)
-                setLoading(false)
-            })
-
-            return () => unsubscribe()
-        } catch (err) {
-            console.error("Setup Error:", err)
+        const handleError = (err: any) => {
+            console.error("Firestore Error:", err)
             setError(err)
             setLoading(false)
         }
-    }, [collectionName, ...deps]) // Re-run if collection or dependencies change.
+
+        try {
+            const ref = collection(db, collectionName)
+            const q = query(ref, ...constraints)
+
+            const unsubscribe = onSnapshot(
+                q,
+                (snapshot) => {
+                    const results = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    setData(results as T[])
+                    setLoading(false)
+                },
+                handleError
+            )
+
+            return unsubscribe
+        } catch (err) {
+            handleError(err)
+        }
+    }, [collectionName, ...deps])
 
     return { data, loading, error }
 }
@@ -55,25 +53,25 @@ export function useFirestoreDoc<T>(collectionName: string, docId: string) {
     const [error, setError] = useState<any>(null)
 
     useEffect(() => {
-        try {
-            const ref = doc(db, collectionName, docId)
-            const unsubscribe = onSnapshot(ref, (docSnap) => {
-                if (docSnap.exists()) {
-                    setData({ id: docSnap.id, ...docSnap.data() } as T)
-                } else {
-                    setData(null)
-                }
-                setLoading(false)
-            }, (err) => {
-                console.error("Firestore Doc Error:", err)
-                setError(err)
-                setLoading(false)
-            })
-            return () => unsubscribe()
-        } catch (err) {
-            console.error("Setup Doc Error:", err)
+        const handleError = (err: any) => {
+            console.error("Firestore Doc Error:", err)
             setError(err)
             setLoading(false)
+        }
+
+        try {
+            const ref = doc(db, collectionName, docId)
+            const unsubscribe = onSnapshot(
+                ref,
+                (docSnap) => {
+                    setData(docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } as T : null)
+                    setLoading(false)
+                },
+                handleError
+            )
+            return unsubscribe
+        } catch (err) {
+            handleError(err)
         }
     }, [collectionName, docId])
 
@@ -81,7 +79,6 @@ export function useFirestoreDoc<T>(collectionName: string, docId: string) {
 }
 
 export function useFirestoreCRUD(collectionName: string) {
-
     const add = async (data: any) => {
         try {
             const ref = collection(db, collectionName)

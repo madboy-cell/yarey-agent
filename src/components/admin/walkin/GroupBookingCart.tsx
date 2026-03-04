@@ -1,6 +1,6 @@
 import React from 'react'
 import { motion, AnimatePresence } from "framer-motion"
-import { Users, Plus, Trash2, Copy, CreditCard, ChevronRight, Mail, Phone, BedDouble, Check, Globe, MapPin } from "lucide-react"
+import { Users, Plus, Trash2, Copy, CreditCard, ChevronRight, Mail, Phone, BedDouble, Check, Globe, MapPin, Handshake, Megaphone, Ticket } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { nationalities } from "@/lib/nationalities"
 
@@ -36,6 +36,11 @@ export interface CartItem {
     voucherId?: string
     manualDiscount?: number
     therapistId?: string
+    // Bound voucher (partner/media promo code)
+    boundVoucherCode?: string
+    boundDiscountPercent?: number
+    boundPartnerId?: string
+    boundMediaId?: string
 }
 
 interface GroupBookingCartProps {
@@ -73,7 +78,8 @@ export function GroupBookingCart({
         if (item.voucherId) return sum
         const price = item.treatment.price_thb
         const discount = item.manualDiscount || 0
-        return sum + Math.max(0, price - discount)
+        const boundDiscount = item.boundDiscountPercent ? Math.round(price * item.boundDiscountPercent / 100) : 0
+        return sum + Math.max(0, price - discount - boundDiscount)
     }, 0)
 
     const isCheckoutDisabled = cart.some(g => {
@@ -261,13 +267,13 @@ export function GroupBookingCart({
                                                 </select>
                                             </div>
 
-                                            {/* Voucher Redemption */}
+                                            {/* Voucher / Promo Code Redemption */}
                                             {onValidateVoucher && !guest.voucherId && (
                                                 <div className="pt-2 border-t border-dashed border-white/20 space-y-2">
                                                     <div className="flex gap-2">
                                                         <input
                                                             type="text"
-                                                            placeholder="Scan Voucher"
+                                                            placeholder="Voucher or Partner/Media Code"
                                                             className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono uppercase text-black placeholder:text-gray-400"
                                                             value={voucherInput}
                                                             onChange={(e) => setVoucherInput(e.target.value)}
@@ -278,18 +284,31 @@ export function GroupBookingCart({
                                                             onClick={() => {
                                                                 const voucher = onValidateVoucher(voucherInput)
                                                                 if (voucher) {
-                                                                    onUpdateGuest(guest.tempId, {
-                                                                        voucherId: voucher.id,
-                                                                        voucherCode: voucher.code,
-                                                                        manualDiscount: 0,
-                                                                        treatment: {
-                                                                            id: voucher.treatmentId,
-                                                                            title: voucher.treatmentTitle,
-                                                                            price_thb: 0,
-                                                                            duration_min: 0
-                                                                        }
-                                                                    })
-                                                                    setVoucherInput("")
+                                                                    // Check if this is a bound voucher (partner/media)
+                                                                    if ((voucher as any).boundType) {
+                                                                        const bv = voucher as any
+                                                                        onUpdateGuest(guest.tempId, {
+                                                                            boundVoucherCode: bv.code,
+                                                                            boundDiscountPercent: bv.discountPercent || 0,
+                                                                            boundPartnerId: bv.boundType === "partner" ? bv.boundEntityId : undefined,
+                                                                            boundMediaId: bv.boundType === "media" ? bv.boundEntityId : undefined,
+                                                                        })
+                                                                        setVoucherInput("")
+                                                                    } else {
+                                                                        // Regular voucher — full redeem
+                                                                        onUpdateGuest(guest.tempId, {
+                                                                            voucherId: voucher.id,
+                                                                            voucherCode: voucher.code,
+                                                                            manualDiscount: 0,
+                                                                            treatment: {
+                                                                                id: voucher.treatmentId,
+                                                                                title: voucher.treatmentTitle,
+                                                                                price_thb: 0,
+                                                                                duration_min: 0
+                                                                            }
+                                                                        })
+                                                                        setVoucherInput("")
+                                                                    }
                                                                 } else {
                                                                     alert("Invalid or Used Code")
                                                                 }
@@ -298,6 +317,21 @@ export function GroupBookingCart({
                                                             Apply
                                                         </Button>
                                                     </div>
+
+                                                    {/* Show applied bound code */}
+                                                    {guest.boundVoucherCode && (
+                                                        <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-lg">
+                                                            <div className="flex items-center gap-2">
+                                                                {guest.boundPartnerId ? <Handshake className="w-3.5 h-3.5 text-emerald-400" /> : <Megaphone className="w-3.5 h-3.5 text-purple-400" />}
+                                                                <span className="text-xs font-mono font-bold text-emerald-300">{guest.boundVoucherCode}</span>
+                                                                <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-bold">{guest.boundDiscountPercent}% OFF</span>
+                                                            </div>
+                                                            <button onClick={() => onUpdateGuest(guest.tempId, { boundVoucherCode: undefined, boundDiscountPercent: undefined, boundPartnerId: undefined, boundMediaId: undefined })}
+                                                                className="text-foreground/30 hover:text-red-400 transition-colors">
+                                                                <Trash2 className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    )}
 
                                                     {/* Manual Discount Input */}
                                                     <div className="flex items-center justify-between bg-white/5 border border-white/10 p-2 rounded-lg">
@@ -326,15 +360,18 @@ export function GroupBookingCart({
                                             <div className="text-primary font-bold font-serif text-base flex items-center gap-2">
                                                 {guest.treatment.title}
                                                 {guest.voucherId && <span className="bg-primary text-[#0A2021] text-[9px] px-1.5 rounded uppercase tracking-wider">Prepaid</span>}
+                                                {guest.boundPartnerId && <span className="bg-emerald-500/20 text-emerald-400 text-[9px] px-1.5 rounded uppercase tracking-wider flex items-center gap-0.5"><Handshake className="w-2.5 h-2.5" /> Partner</span>}
+                                                {guest.boundMediaId && <span className="bg-purple-500/20 text-purple-400 text-[9px] px-1.5 rounded uppercase tracking-wider flex items-center gap-0.5"><Megaphone className="w-2.5 h-2.5" /> Media</span>}
                                             </div>
                                             <div className="text-[10px] uppercase tracking-wider text-foreground/40">{guest.treatment.duration_min > 0 ? `${guest.treatment.duration_min} min` : 'Voucher'} • {guest.time}</div>
                                             {guest.voucherCode && <div className="text-[9px] font-mono text-emerald-400 mt-1">Code: {guest.voucherCode}</div>}
+                                            {guest.boundVoucherCode && <div className="text-[9px] font-mono text-emerald-400 mt-1">Promo: {guest.boundVoucherCode} ({guest.boundDiscountPercent}% off)</div>}
                                         </div>
                                         <div className="text-right">
-                                            {guest.manualDiscount ? (
+                                            {(guest.manualDiscount || guest.boundDiscountPercent) ? (
                                                 <>
                                                     <div className="text-[10px] text-foreground/30 line-through">฿{guest.treatment.price_thb.toLocaleString()}</div>
-                                                    <div className="font-mono font-medium text-emerald-400">฿{Math.max(0, guest.treatment.price_thb - guest.manualDiscount).toLocaleString()}</div>
+                                                    <div className="font-mono font-medium text-emerald-400">฿{Math.max(0, guest.treatment.price_thb - (guest.manualDiscount || 0) - (guest.boundDiscountPercent ? Math.round(guest.treatment.price_thb * guest.boundDiscountPercent / 100) : 0)).toLocaleString()}</div>
                                                 </>
                                             ) : (
                                                 <div className="font-mono font-medium text-foreground">฿{guest.treatment.price_thb.toLocaleString()}</div>

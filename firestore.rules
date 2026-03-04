@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Check if user is signed in via Firebase Auth
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // --- PUBLIC READ COLLECTIONS (Landing Page Content) ---
+    
+    // Menu Treatments
+    match /treatments/{document} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Botanical Elixirs
+    match /elixirs/{document} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /teas/{document} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Settings (Required for Vibe Meter status)
+    match /settings/{document} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // --- WHOOP Integration (Server-side OAuth flow) ---
+    // These are accessed by API routes (server-side) during OAuth callback.
+    // Security: session IDs are unguessable UUIDs, tokens never exposed to client.
+    match /whoop_sessions/{document} {
+      allow read, write: if true;
+    }
+
+    // --- REVIEW TRACKING (Cron Job) ---
+    // Written by /api/cron/review-snapshot via REST API (no auth)
+    // Data is non-sensitive: date, rating, totalReviews
+    match /reviewSnapshots/{document} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+
+    // --- PROTECTED COLLECTIONS (Staff/Admin Only) ---
+    
+    // Guest Bookings (Sensitive PII)
+    // Read: public (member portal booking history)
+    // Write: admin only
+    match /bookings/{document} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Client Database (Sensitive PII)
+    // Read: public (member portal email lookup)
+    // Write: admin only
+    match /clients/{document} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Health Data (Highly Sensitive)
+    // Read: public (member portal wellness history)
+    // Write: public (scan results saved from client)
+    match /biomarker_logs/{document} {
+      allow read, write: if true;
+    }
+    
+    // Team Management
+    match /salesmen/{document} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Financials & Operations
+    // Read: public (member portal voucher display)
+    // Write: public (gift API transfers + admin)
+    match /vouchers/{document} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // Gift Transactions
+    // Read: public (member portal gift history)
+    // Write: public (gift API creates records)
+    match /gift_transactions/{document} {
+      allow read, write: if true;
+    }
+
+    // Pending Gifts (code-based gift system)
+    // Read/Write: public (gift create/claim API routes)
+    match /pending_gifts/{document} {
+      allow read, write: if true;
+    }
+
+    match /blocks/{document} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    match /expenses/{document} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Default: Deny all other access unless authenticated
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

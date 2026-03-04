@@ -2,38 +2,14 @@
 
 import { useState, useMemo } from "react"
 import { motion } from "framer-motion"
-import { DollarSign, Activity, Users, TrendingUp, Trophy, Medal, Star, Target, UserCheck, RefreshCw, Percent, XCircle } from "lucide-react"
+import { DollarSign, Activity, Users, TrendingUp, Trophy, Medal, Star, Target, UserCheck, RefreshCw, Percent, XCircle, Handshake, Megaphone, PartyPopper, Package } from "lucide-react"
 import { AreaChart, Area, XAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
-import { Download, Edit2, Share2 } from "lucide-react";
-import { useFirestoreCRUD } from "@/hooks/useFirestore";
+import { Download, Edit2, Share2, FileText } from "lucide-react";
+import { useFirestoreCRUD, useFirestoreCollection } from "@/hooks/useFirestore";
+import { generateMonthlyReport } from "@/lib/pdf/generateMonthlyReport"
 
 // Types
-import { Booking, Salesman, Treatment } from "@/types"
-
-interface Expense {
-    id: string
-    month: string // YYYY-MM
-    title: string
-    amount: number
-    category: string
-}
-
-interface PulseProps {
-    bookings: Booking[]
-    treatments: any[]
-    salesmen: Salesman[]
-    expenses: Expense[]
-    targetSettings?: { monthlyGoals: Record<string, number> } | null
-    onEdit: (booking: Booking) => void
-}
-
-interface Expense {
-    id: string
-    month: string // YYYY-MM
-    title: string
-    amount: number
-    category: string
-}
+import { Booking, Salesman, Treatment, Expense, CirclePartner, CircleMedia, CircleEvent, CircleSupplier } from "@/types"
 
 interface PulseProps {
     bookings: Booking[]
@@ -55,6 +31,12 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
     const [targetInputValue, setTargetInputValue] = useState<string>("")
     const settingsOps = useFirestoreCRUD("settings")
 
+    // Circle data for Health Scorecard
+    const { data: circlePartners } = useFirestoreCollection<CirclePartner>("circle_partners")
+    const { data: circleMedia } = useFirestoreCollection<CircleMedia>("circle_media")
+    const { data: circleEvents } = useFirestoreCollection<CircleEvent>("circle_events")
+    const { data: circleSuppliers } = useFirestoreCollection<CircleSupplier>("circle_suppliers")
+
     // Save Target Function
     const saveMonthlyTarget = async (monthStr: string, value: number) => {
         const currentGoals = targetSettings?.monthlyGoals || {}
@@ -69,15 +51,13 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
     }
 
 
-    // --- Helper Logic ---
-    const getFilteredBookings = () => {
-        // Use en-CA to safely get YYYY-MM-DD in local time
+    // --- Helper Logic (Memoized) ---
+    const filteredBookings = useMemo(() => {
         const todayStr = new Date().toLocaleDateString("en-CA")
 
         return bookings.filter(b => {
             if (timeRange === "all") return true
 
-            // Handle relative text dates ("Today")
             if (b.date === "Today") {
                 return ["today", "month"].includes(timeRange)
             }
@@ -90,21 +70,19 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
             }
 
             if (timeRange === "month") {
-                // Check if same month and year
                 return bookingDate.getMonth() === now.getMonth() &&
                     bookingDate.getFullYear() === now.getFullYear()
             }
 
             return true
         })
-    }
-
-    const filteredBookings = getFilteredBookings()
+    }, [bookings, timeRange])
 
     // --- Management Logic (Yearly Aggregation) - MEMOIZED ---
     const managementData = useMemo(() => {
         const monthlyData: Record<string, {
             revenue: number,
+            eventRevenue: number,
             guests: number,
             bookings: number,
             days: Record<string, any>,
@@ -118,7 +96,7 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
         // Initialize Scale
-        months.forEach(m => monthlyData[m] = { revenue: 0, guests: 0, bookings: 0, days: {}, topGuests: {}, topRituals: {}, topStaff: {}, guestEmails: new Set(), sources: {} })
+        months.forEach(m => monthlyData[m] = { revenue: 0, eventRevenue: 0, guests: 0, bookings: 0, days: {}, topGuests: {}, topRituals: {}, topStaff: {}, guestEmails: new Set(), sources: {} })
 
         bookings.forEach(b => {
             // Parse Date
@@ -159,8 +137,10 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                 monthlyData[monthName].topStaff[sName] = (monthlyData[monthName].topStaff[sName] || 0) + val
             }
 
-            // Source Tracking (read from contact.source)
-            const source = b.contact?.source || "Unknown"
+            // Source Tracking — override source for partner/media referrals
+            let source = b.contact?.source || "Unknown"
+            if (b.partnerId) source = "Partner Referral"
+            else if (b.mediaId) source = "Media Referral"
             if (!monthlyData[monthName].sources[source]) {
                 monthlyData[monthName].sources[source] = { count: 0, revenue: 0 }
             }
@@ -173,8 +153,22 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
             monthlyData[monthName].days[dayNum].guests += b.guests
             monthlyData[monthName].days[dayNum].bookings += 1
         })
+
+        // Inject event revenue per month from circleEvents
+        circleEvents.forEach(ev => {
+            if (ev.status !== "completed" || ev.financialType !== "we_earn") return
+            ev.dates.forEach(dateStr => {
+                const d = new Date(dateStr)
+                if (d.getFullYear() !== selectedYear) return
+                const monthName = months[d.getMonth()]
+                const eventVal = ev.perHeadPricing ? ev.amount * (ev.actualAttendance || ev.expectedGuests) : ev.amount
+                // Spread evenly across dates
+                monthlyData[monthName].eventRevenue += Math.round(eventVal / ev.dates.length)
+            })
+        })
+
         return monthlyData
-    }, [bookings, treatments, salesmen, selectedYear])
+    }, [bookings, treatments, salesmen, selectedYear, circleEvents])
 
     // --- PREVIOUS YEAR DATA (for YoY Comparison) ---
     const previousYearData = useMemo(() => {
@@ -283,37 +277,131 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                 ["Confirmed", "Arrived", "In Ritual", "Complete"].includes(b.status)
         })
 
-        // Sales commissions
+        // Detailed Staff Payroll Calculation
+        const staffDetailsMap = new Map<string, { base: number, salesComm: number, serviceComm: number }>()
+        let outsourceCost = 0
+
+        // Initialize with Base Salaries
+        salesmen.forEach(s => {
+            if (s.active) {
+                staffDetailsMap.set(s.id, { base: s.baseSalary || 0, salesComm: 0, serviceComm: 0 })
+            }
+        })
+
+        // Add Commissions & Therapist Costs from Bookings
+        monthBookings.forEach(b => {
+            // Sales Commission
+            if (b.salesmanId) {
+                const current = staffDetailsMap.get(b.salesmanId) || { base: 0, salesComm: 0, serviceComm: 0 }
+                current.salesComm += (b.commissionAmount || 0)
+                staffDetailsMap.set(b.salesmanId, current)
+            }
+
+            // Therapist Cost (Service Fee)
+            if (b.therapistId === "OUTSOURCE") {
+                outsourceCost += (b.therapistCostSnapshot || 0)
+            } else if (b.therapistId) {
+                const current = staffDetailsMap.get(b.therapistId) || { base: 0, salesComm: 0, serviceComm: 0 }
+                current.serviceComm += (b.therapistCostSnapshot || 0)
+                staffDetailsMap.set(b.therapistId, current)
+            }
+        })
+
+        const staffPayrolls: Array<{ name: string; role: string; base: number; comms: number; service: number; totalPayout: number }> = []
+
+        // Convert Map to Array
+        staffDetailsMap.forEach((details, id) => {
+            const staff = salesmen.find(s => s.id === id)
+            const total = details.base + details.salesComm + details.serviceComm
+
+            if (staff || total > 0) {
+                staffPayrolls.push({
+                    name: staff ? staff.nickname : "Unknown Staff",
+                    role: staff ? (staff.role || "Therapist") : "N/A",
+                    base: details.base,
+                    comms: details.salesComm,
+                    service: details.serviceComm,
+                    totalPayout: total
+                })
+            }
+        })
+
+        // Aggregate Totals for Summary
         const monthCommissions = monthBookings.reduce((sum, b) => sum + (b.commissionAmount || 0), 0)
+        const totalTherapistCosts = monthBookings.reduce((sum, b) => sum + (b.therapistCostSnapshot || 0), 0) // Includes outsource
 
-        // Therapist/Outsource costs
-        const monthTherapistCosts = monthBookings.reduce((sum, b) => sum + (b.therapistCostSnapshot || 0), 0)
+        const staffTotalPayouts = staffPayrolls.reduce((sum, s) => sum + s.totalPayout, 0)
+        const monthLaborCost = staffTotalPayouts + outsourceCost
 
-        // Total labor = base payroll + commissions + therapist costs
-        const monthLaborCost = totalPayroll + monthCommissions + monthTherapistCosts
-
-        // 2. Other Expenses
+        // 2. Other Expenses Details
         const monthStr = `${selectedYear}-${String(monthIndex + 1).padStart(2, '0')}` // 2025-01
         const monthStrSimple = `${selectedYear}-${monthIndex + 1}` // 2025-1
 
-        const monthOtherExpenses = expenses
+        const monthlyExpenseItems = expenses
             .filter(e => e.month === monthStr || e.month === monthStrSimple)
-            .reduce((sum, e) => sum + (e.amount || 0), 0)
+            .map(e => ({
+                title: e.title,
+                amount: e.amount,
+                category: e.category
+            }))
 
-        const totalCost = monthLaborCost + monthOtherExpenses
+        // Split: event expenses vs other expenses
+        const eventExpenseCosts = monthlyExpenseItems
+            .filter(e => e.category === 'Events')
+            .reduce((sum, e) => sum + e.amount, 0)
+        const monthOtherExpenses = monthlyExpenseItems
+            .filter(e => e.category !== 'Events')
+            .reduce((sum, e) => sum + e.amount, 0)
+
+        // 3. Circle Costs (Media, Events, Suppliers)
+        // Media costs — match by visit month
+        const mediaCosts = circleMedia
+            .filter(m => {
+                if (!m.visitDate || m.paymentStatus !== 'paid') return false
+                const d = new Date(m.visitDate)
+                return d.getFullYear() === selectedYear && d.getMonth() === monthIndex
+            })
+            .reduce((sum, m) => sum + (m.cost || 0), 0)
+
+        // Supplier costs — active suppliers with monthly billing
+        const supplierCosts = circleSuppliers
+            .filter(s => s.status === 'active' && s.costType === 'monthly')
+            .reduce((sum, s) => sum + (s.costAmount || 0), 0)
+
+        const supplierDailyCosts = circleSuppliers
+            .filter(s => s.status === 'active' && s.costType === 'daily')
+            .reduce((sum, s) => {
+                const daysInMonth = new Date(selectedYear, monthIndex + 1, 0).getDate()
+                return sum + (s.costAmount || 0) * daysInMonth
+            }, 0)
+
+        const totalCircleCosts = mediaCosts + eventExpenseCosts + supplierCosts + supplierDailyCosts
+
+        const totalCost = monthLaborCost + monthOtherExpenses + totalCircleCosts
         const laborRatio = monthRevenue > 0 ? Math.round((monthLaborCost / monthRevenue) * 100) : 0
         const totalRatio = monthRevenue > 0 ? Math.round((totalCost / monthRevenue) * 100) : 0
 
         return {
             laborRatio,
             totalRatio,
-            baseSalary: totalPayroll,
+            baseSalary: salesmen.reduce((sum, s) => sum + (s.active ? (s.baseSalary || 0) : 0), 0),
             commissions: monthCommissions,
-            therapistCosts: monthTherapistCosts,
+            therapistCosts: totalTherapistCosts,
             laborTotal: monthLaborCost,
             otherExpenses: monthOtherExpenses,
             totalCost: totalCost,
-            revenue: monthRevenue
+            revenue: monthRevenue,
+            // Detailed
+            staffPayrolls,
+            outsourceCost,
+            expenseItems: monthlyExpenseItems,
+            // Circle costs
+            circleCosts: {
+                media: mediaCosts,
+                events: eventExpenseCosts,
+                suppliers: supplierCosts + supplierDailyCosts,
+                total: totalCircleCosts
+            }
         }
     }
 
@@ -374,6 +462,72 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
         link.click();
         document.body.removeChild(link);
     }
+
+    // Helper: PDF Monthly Report Export
+    const downloadMonthlyPDF = (monthIndex: number) => {
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        const monthName = months[monthIndex]
+        const data = managementData[monthName]
+
+        if (!data || data.revenue === 0) {
+            alert("No data available for this month")
+            return
+        }
+
+        const costs = getMonthlyCostBreakdown(monthIndex)
+        const netProfit = getMonthlyNetProfit(monthIndex)
+        const target = getMonthlyTarget(monthIndex)
+        const yoy = getYoYChange(monthIndex)
+        const retention = calculateRetention(monthIndex)
+        const cancellationRate = getMonthlyCancellationRate(monthIndex)
+
+        // Prepare top performers
+        const topStaff = Object.entries(data.topStaff)
+            .sort(([, a], [, b]) => b - a)
+            .map(([name, revenue]) => ({ name, revenue }))
+
+        const topRituals = Object.entries(data.topRituals)
+            .sort(([, a], [, b]) => b - a)
+            .map(([name, revenue]) => ({ name, revenue }))
+
+        const topGuests = Object.entries(data.topGuests)
+            .sort(([, a], [, b]) => b - a)
+            .map(([name, revenue]) => ({ name, revenue }))
+
+        // Prepare sources
+        const totalRevenue = data.revenue
+        const sources = Object.entries(data.sources)
+            .sort(([, a], [, b]) => b.revenue - a.revenue)
+            .map(([name, sourceData]) => ({
+                name,
+                count: sourceData.count,
+                revenue: sourceData.revenue,
+                percentage: totalRevenue > 0 ? Math.round((sourceData.revenue / totalRevenue) * 100) : 0
+            }))
+
+        generateMonthlyReport({
+            month: monthName,
+            year: selectedYear,
+            revenue: data.revenue,
+            guests: data.guests,
+            bookings: data.bookings,
+            aov: data.bookings > 0 ? Math.round(data.revenue / data.bookings) : 0,
+            costs,
+            target,
+            netProfit,
+            yoyComparison: yoy.hasData ? {
+                previousRev: yoy.previousRev,
+                change: yoy.change!
+            } : undefined,
+            topStaff,
+            topRituals,
+            topGuests,
+            retention: retention.returning + retention.new > 0 ? retention : undefined,
+            cancellationRate,
+            sources
+        })
+    }
+
 
 
     // 1. Calculate Revenue (Confirmed/Arrived/Complete)
@@ -561,6 +715,8 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                             "Referral": "bg-orange-400",
                             "Agent": "bg-cyan-400",
                             "Repeat": "bg-yellow-400",
+                            "Partner Referral": "bg-teal-400",
+                            "Media Referral": "bg-fuchsia-400",
                             "Unknown": "bg-gray-400"
                         }
 
@@ -603,11 +759,110 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                         )
                     })()}
 
+                    {/* ═══ CIRCLE HEALTH SCORECARD ═══ */}
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+                        className="bg-card border border-primary/10 p-6 rounded-[2rem]">
+                        <div className="flex justify-between items-start mb-5">
+                            <div>
+                                <span className="text-xs uppercase tracking-widest text-foreground/40 font-bold">Partnership Circle</span>
+                                <p className="text-[10px] text-foreground/20 mt-0.5">Live metrics across all 4 modules</p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {/* Partners */}
+                            {(() => {
+                                const activePartners = circlePartners.filter(p => p.status === "active")
+                                const partnerBookings = bookings.filter(b => b.partnerId && ["Confirmed", "Arrived", "In Ritual", "Complete"].includes(b.status))
+                                const partnerRevenue = partnerBookings.reduce((s, b) => s + (b.priceSnapshot || 0), 0)
+                                return (
+                                    <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-4">
+                                        <Handshake className="w-5 h-5 text-emerald-400 mb-2" />
+                                        <div className="text-xl font-serif text-foreground">{activePartners.length}</div>
+                                        <div className="text-[9px] uppercase tracking-widest text-foreground/40 font-bold">Active Partners</div>
+                                        <div className="text-[10px] text-emerald-400 font-mono mt-1">฿{partnerRevenue.toLocaleString()} rev</div>
+                                        <div className="text-[10px] text-foreground/25">{partnerBookings.length} bookings</div>
+                                    </div>
+                                )
+                            })()}
+
+                            {/* Media */}
+                            {(() => {
+                                const totalMedia = circleMedia.length
+                                const completedMedia = circleMedia.filter(m => m.status === "completed")
+                                const totalCost = circleMedia.reduce((s, m) => s + (m.cost || 0), 0)
+                                const mediaBookings = bookings.filter(b => b.mediaId && ["Confirmed", "Arrived", "In Ritual", "Complete"].includes(b.status))
+                                const mediaRevenue = mediaBookings.reduce((s, b) => s + (b.priceSnapshot || 0), 0)
+                                const roi = totalCost > 0 ? Math.round(((mediaRevenue - totalCost) / totalCost) * 100) : 0
+                                const pendingContent = circleMedia.filter(m => m.status === "visited" && m.visitDate && new Date().getTime() - new Date(m.visitDate).getTime() > 7 * 86400000).length
+                                return (
+                                    <div className="bg-purple-500/5 border border-purple-500/15 rounded-2xl p-4">
+                                        <Megaphone className="w-5 h-5 text-purple-400 mb-2" />
+                                        <div className="text-xl font-serif text-foreground">{totalMedia}</div>
+                                        <div className="text-[9px] uppercase tracking-widest text-foreground/40 font-bold">Media Collabs</div>
+                                        <div className={`text-[10px] font-mono mt-1 ${roi >= 0 ? "text-emerald-400" : "text-red-400"}`}>{roi > 0 ? "+" : ""}{roi}% ROI</div>
+                                        {pendingContent > 0 && <div className="text-[9px] text-orange-400 mt-0.5">⚠ {pendingContent} content pending</div>}
+                                    </div>
+                                )
+                            })()}
+
+                            {/* Events */}
+                            {(() => {
+                                const today = new Date().toISOString().slice(0, 10)
+                                const upcoming = circleEvents.filter(e => e.status === "confirmed" && e.dates.some(d => d >= today))
+                                const completedEvents = circleEvents.filter(e => e.status === "completed")
+                                const committedEvents = circleEvents.filter(e => ["confirmed", "completed"].includes(e.status))
+                                const eventRevenue = completedEvents.filter(e => e.financialType === "we_earn")
+                                    .reduce((s, e) => s + (e.perHeadPricing ? e.amount * (e.actualAttendance || e.expectedGuests) : e.amount), 0)
+                                const eventCost = committedEvents.filter(e => e.financialType === "we_pay")
+                                    .reduce((s, e) => s + e.amount, 0)
+                                return (
+                                    <div className="bg-orange-500/5 border border-orange-500/15 rounded-2xl p-4">
+                                        <PartyPopper className="w-5 h-5 text-orange-400 mb-2" />
+                                        <div className="text-xl font-serif text-foreground">{upcoming.length}</div>
+                                        <div className="text-[9px] uppercase tracking-widest text-foreground/40 font-bold">Upcoming Events</div>
+                                        <div className="text-[10px] text-primary font-mono mt-1">฿{eventRevenue.toLocaleString()} earned</div>
+                                        {eventCost > 0 && <div className="text-[10px] text-red-400/60">-฿{eventCost.toLocaleString()} cost</div>}
+                                    </div>
+                                )
+                            })()}
+
+                            {/* Suppliers */}
+                            {(() => {
+                                const activeSuppliers = circleSuppliers.filter(s => s.status === "active")
+                                const monthlyCost = activeSuppliers.reduce((s, sup) => s + (sup.costAmount || 0), 0)
+                                const expiringCount = circleSuppliers.filter(s => {
+                                    if (!s.contractEnd) return false
+                                    const daysLeft = (new Date(s.contractEnd).getTime() - new Date().getTime()) / 86400000
+                                    return daysLeft > 0 && daysLeft <= 30
+                                }).length
+                                return (
+                                    <div className="bg-blue-500/5 border border-blue-500/15 rounded-2xl p-4">
+                                        <Package className="w-5 h-5 text-blue-400 mb-2" />
+                                        <div className="text-xl font-serif text-foreground">{activeSuppliers.length}</div>
+                                        <div className="text-[9px] uppercase tracking-widest text-foreground/40 font-bold">Suppliers</div>
+                                        <div className="text-[10px] text-foreground/40 font-mono mt-1">฿{monthlyCost.toLocaleString()}/mo</div>
+                                        {expiringCount > 0 && <div className="text-[9px] text-orange-400 mt-0.5">⚠ {expiringCount} expiring soon</div>}
+                                    </div>
+                                )
+                            })()}
+                        </div>
+                    </motion.div>
+
                     {/* Yearly Overview Chart */}
                     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-card border border-primary/10 p-8 rounded-[2.5rem] shadow-[0_0_50px_rgba(0,0,0,0.3)]">
                         <div className="flex justify-between items-start mb-8">
                             <div>
                                 <h3 className="text-sm font-bold uppercase tracking-widest text-foreground/40">Revenue by Month {selectedYear}</h3>
+                                <div className="flex items-center gap-4 mt-2">
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="w-3 h-3 rounded-sm bg-emerald-500" />
+                                        <span className="text-[10px] text-foreground/40">Bookings</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="w-3 h-3 rounded-sm bg-amber-400" />
+                                        <span className="text-[10px] text-foreground/40">Events</span>
+                                    </div>
+                                </div>
                             </div>
                             <Activity className="text-primary opacity-50" />
                         </div>
@@ -619,8 +874,13 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                                         contentStyle={{ backgroundColor: '#051818', border: '1px solid #ffffff10', borderRadius: '12px' }}
                                         itemStyle={{ color: '#fff' }}
                                         cursor={{ fill: '#ffffff05' }}
+                                        formatter={(value: any, name: any) => [
+                                            `฿${Number(value || 0).toLocaleString()}`,
+                                            name === 'revenue' ? 'Bookings' : 'Events'
+                                        ]}
                                     />
-                                    <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+                                    <Bar dataKey="revenue" stackId="rev" fill="#10b981" radius={[0, 0, 0, 0]} barSize={40} name="revenue" />
+                                    <Bar dataKey="eventRevenue" stackId="rev" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={40} name="eventRevenue" />
                                 </BarChart>
                             </ResponsiveContainer>
                         </div>
@@ -639,13 +899,26 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                             const isFiscalLeader = month === maxRevenueMonth && data.revenue > 0
 
                             return (
-                                <div key={month} onClick={() => setExpandedMonth(expandedMonth === month ? null : month)} className={`p-6 rounded-[2rem] border transition-all cursor-pointer hover:scale-[1.02] relative overflow-hidden ${expandedMonth === month ? "bg-primary/10 border-primary shadow-lg ring-1 ring-primary/50 col-span-1 md:col-span-2 lg:col-span-4 row-span-2" : isFiscalLeader ? "bg-gradient-to-br from-[#FFD700]/10 to-card border-[#FFD700]/40" : "bg-card border-primary/10 hover:border-primary/30"}`}>
+                                <div key={month} onClick={() => setExpandedMonth(expandedMonth === month ? null : month)} className={`group p-6 rounded-[2rem] border transition-all cursor-pointer hover:scale-[1.02] relative overflow-hidden ${expandedMonth === month ? "bg-primary/10 border-primary shadow-lg ring-1 ring-primary/50 col-span-1 md:col-span-2 lg:col-span-4 row-span-2" : isFiscalLeader ? "bg-gradient-to-br from-[#FFD700]/10 to-card border-[#FFD700]/40" : "bg-card border-primary/10 hover:border-primary/30"}`}>
                                     {isFiscalLeader && <div className="absolute top-0 right-0 p-2"><Trophy className="w-4 h-4 text-[#FFD700] opacity-50" /></div>}
 
                                     <div className="flex justify-between items-center mb-4">
                                         <span className="text-xl font-serif font-bold text-foreground">{month}</span>
                                         {data.bookings > 0 && (
-                                            <div className="flex gap-2">
+                                            <div className="flex gap-2 items-center">
+                                                {/* PDF Download Button (collapsed view only) */}
+                                                {expandedMonth !== month && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            downloadMonthlyPDF(index)
+                                                        }}
+                                                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-emerald-500/10 rounded-lg"
+                                                        title="Download Full Report (PDF)"
+                                                    >
+                                                        <FileText className="w-4 h-4 text-emerald-400" />
+                                                    </button>
+                                                )}
                                                 {/* Growth Badge */}
                                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${growth >= 0 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
                                                     {growth > 0 ? "+" : ""}{growth.toFixed(1)}%
@@ -669,6 +942,12 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                                             <span className="text-xs text-foreground/40 uppercase tracking-wider">Revenue</span>
                                             <span className="font-mono text-lg font-bold text-primary">฿{data.revenue.toLocaleString()}</span>
                                         </div>
+                                        {data.eventRevenue > 0 && (
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-xs text-amber-400/60 uppercase tracking-wider flex items-center gap-1"><PartyPopper className="w-3 h-3" /> Events</span>
+                                                <span className="font-mono text-sm text-amber-400">฿{data.eventRevenue.toLocaleString()}</span>
+                                            </div>
+                                        )}
                                         {/* YoY Comparison */}
                                         {(() => {
                                             const yoy = getYoYChange(index)
@@ -730,6 +1009,23 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
                                                         <span>Other Expenses</span>
                                                         <span className="font-mono">฿{costs.otherExpenses.toLocaleString()}</span>
                                                     </div>
+                                                    {/* Circle Costs (media + events + suppliers) */}
+                                                    {costs.circleCosts.total > 0 && (
+                                                        <>
+                                                            <div className="flex justify-between pt-0.5 border-t border-teal-500/10 text-teal-400/60">
+                                                                <span>Circle — Media</span>
+                                                                <span className="font-mono">฿{costs.circleCosts.media.toLocaleString()}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-teal-400/60">
+                                                                <span>Circle — Events</span>
+                                                                <span className="font-mono">฿{costs.circleCosts.events.toLocaleString()}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-teal-400/60">
+                                                                <span>Circle — Suppliers</span>
+                                                                <span className="font-mono">฿{costs.circleCosts.suppliers.toLocaleString()}</span>
+                                                            </div>
+                                                        </>
+                                                    )}
                                                     <div className="flex justify-between pt-1 border-t border-white/5 text-foreground/50">
                                                         <span>Total Costs</span>
                                                         <span className="font-mono font-bold">฿{costs.totalCost.toLocaleString()}</span>
@@ -966,10 +1262,21 @@ export function PulseTab({ bookings, treatments, salesmen, expenses, targetSetti
 
                                                 {/* Actions */}
                                                 <div className="flex justify-between items-center mb-2">
-                                                    <h4 className="text-xs font-bold uppercase text-foreground/40">Daily Breakdown</h4>
-                                                    <button onClick={() => downloadCSV(month, data)} className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-colors print:hidden">
-                                                        <Download className="w-3 h-3" /> Export CSV
-                                                    </button>
+                                                    <h4 className="text-xs font-bold uppercase text-foreground/40">Reports & Data</h4>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => downloadMonthlyPDF(index)}
+                                                            className="flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 px-3 py-1.5 rounded-lg transition-colors print:hidden font-bold uppercase tracking-wider"
+                                                        >
+                                                            <FileText className="w-3 h-3" /> Full Report (PDF)
+                                                        </button>
+                                                        <button
+                                                            onClick={() => downloadCSV(month, data)}
+                                                            className="flex items-center gap-1 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded-lg transition-colors print:hidden"
+                                                        >
+                                                            <Download className="w-3 h-3" /> Daily CSV
+                                                        </button>
+                                                    </div>
                                                 </div>
 
                                                 <table className="w-full text-left text-xs">

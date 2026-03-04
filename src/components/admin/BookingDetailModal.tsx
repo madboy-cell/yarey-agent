@@ -4,13 +4,14 @@ import { motion } from "framer-motion"
 import { X, Trash2, Save, User, Mail, Phone, Clock, FileText, Activity, Calendar, Globe, CreditCard, DollarSign, Users, Award } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { nationalities } from "@/lib/nationalities"
+import { Booking, Treatment, Salesman } from "@/types"
 
 interface BookingDetailModalProps {
-    booking: any
-    treatments?: any[]
-    salesmen?: any[]
+    booking: Booking
+    treatments?: Treatment[]
+    salesmen?: Salesman[]
     onClose: () => void
-    onSave: (id: string, updates: any) => void
+    onSave: (id: string, updates: Partial<Booking>) => void
     onDelete: (id: string) => void
     statusColors: Record<string, string>
 }
@@ -22,12 +23,12 @@ export const BookingDetailModal = ({ booking, treatments = [], salesmen = [], on
         setFormData(booking)
     }, [booking])
 
-    const handleChange = (field: string, value: any) => {
+    const handleChange = (field: string, value: string) => {
         if (field.startsWith("contact.")) {
             const contactField = field.split(".")[1]
             setFormData({
                 ...formData,
-                contact: { ...formData.contact, [contactField]: value }
+                contact: { name: "", method: "", handle: "", ...formData.contact, [contactField]: value }
             })
         } else {
             setFormData({ ...formData, [field]: value })
@@ -222,9 +223,9 @@ export const BookingDetailModal = ({ booking, treatments = [], salesmen = [], on
                             <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4">
                                 <div className="text-[10px] uppercase tracking-widest text-orange-400/60 mb-1">Sold By</div>
                                 <div className="font-bold text-orange-400">{salesman?.nickname || salesman?.name || "—"}</div>
-                                {formData.commissionAmount > 0 && (
+                                {(formData.commissionAmount ?? 0) > 0 && (
                                     <div className="text-xs text-foreground/40 mt-1">
-                                        Commission: <span className="text-orange-400 font-mono">฿{formData.commissionAmount.toLocaleString()}</span>
+                                        Commission: <span className="text-orange-400 font-mono">฿{(formData.commissionAmount ?? 0).toLocaleString()}</span>
                                         <span className="opacity-50"> ({Math.round((formData.commissionSnapshot || 0) * 100)}%)</span>
                                     </div>
                                 )}
@@ -232,9 +233,9 @@ export const BookingDetailModal = ({ booking, treatments = [], salesmen = [], on
                             <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4">
                                 <div className="text-[10px] uppercase tracking-widest text-purple-400/60 mb-1">Therapist</div>
                                 <div className="font-bold text-purple-400">{therapist?.nickname || therapist?.name || "—"}</div>
-                                {formData.therapistCostSnapshot > 0 && (
+                                {(formData.therapistCostSnapshot ?? 0) > 0 && (
                                     <div className="text-xs text-foreground/40 mt-1">
-                                        Cost: <span className="text-purple-400 font-mono">฿{formData.therapistCostSnapshot.toLocaleString()}</span>
+                                        Cost: <span className="text-purple-400 font-mono">฿{(formData.therapistCostSnapshot ?? 0).toLocaleString()}</span>
                                     </div>
                                 )}
                             </div>
@@ -277,8 +278,10 @@ export const BookingDetailModal = ({ booking, treatments = [], salesmen = [], on
                                 >
                                     <option value="">Select...</option>
                                     <option value="Cash">Cash</option>
-                                    <option value="Transfer">Bank Transfer</option>
+                                    <option value="Transfer">Bank Transfer / QR</option>
                                     <option value="Credit Card">Credit Card</option>
+                                    <option value="WeChat Pay">WeChat Pay</option>
+                                    <option value="AliPay">AliPay</option>
                                 </select>
                             </div>
                             <div className="space-y-1">

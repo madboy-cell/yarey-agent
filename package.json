@@ -9,11 +9,14 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@line/liff": "^2.27.3",
     "@types/uuid": "^10.0.0",
     "@yudiel/react-qr-scanner": "^2.5.0",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "firebase": "^12.7.0",
+    "firebase-admin": "^13.6.1",
     "framer-motion": "^12.24.8",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.0.0",

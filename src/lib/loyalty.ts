@@ -1,4 +1,3 @@
-
 export interface BookingStub {
     id: string
     paymentMethod?: string
@@ -13,63 +12,57 @@ export interface VoucherStub {
     clientId?: string
     status: string
     pricePaid?: number
+    giftedFrom?: string  // If set, this voucher was gifted (not purchased)
 }
 
-// 1. Centralized Redemption Detection
-// (Must match logic in Admin Clients Page)
-export const isRedemptionBooking = (b: BookingStub): boolean => {
-    return (
-        (b.paymentMethod === "Voucher") ||
-        (!!b.notes && /voucher|redeem|gift|prepaid|package|promo|comp/i.test(b.notes))
-    )
-}
+const REDEMPTION_KEYWORDS = /voucher|redeem|gift|prepaid|package|promo|comp/i
 
-// 2. Calculate Spend (Funder Model)
-export const calculateClientSpend = (
-    bookings: BookingStub[],
-    vouchers: VoucherStub[],
-    clientEmail: string,
-    clientId: string
-): number => {
-    // A. Booking Spend (Services)
-    // Rule: Count ONLY if NOT a redemption.
-    const bookingSpend = bookings.reduce((sum, b) => {
-        // Filter by ownership
-        if (b.contact?.email !== clientEmail) return sum
-        if (b.status === "Cancelled") return sum
-
-        // Check redemption
-        if (isRedemptionBooking(b)) return sum
-
-        return sum + (Number(b.priceSnapshot) || 0)
-    }, 0)
-
-    // B. Voucher Spend (Pre-paid)
-    // Rule: Count ALL vouchers owned by this client (Issued OR Redeemed), unless Void/Refunded.
-    // This ensures the "Funder" keeps the points.
-    const voucherSpend = vouchers.reduce((sum, v) => {
-        if (v.clientId !== clientId) return sum
-        if (v.status === "VOID" || v.status === "REFUNDED") return sum
-
-        return sum + (Number(v.pricePaid) || 0)
-    }, 0)
-
-    return bookingSpend + voucherSpend
-}
-
-// 3. Tier Definitions
 export const TIERS = [
     { name: "Seeker", spend: 0 },
     { name: "Initiate", spend: 8000 },
     { name: "Devotee", spend: 25000 },
     { name: "Alchemist", spend: 55000 },
     { name: "Guardian", spend: 88000 }
-]
+] as const
+
+export const isRedemptionBooking = (b: BookingStub): boolean => {
+    return b.paymentMethod === "Voucher" || (!!b.notes && REDEMPTION_KEYWORDS.test(b.notes))
+}
+
+function isValidBooking(booking: BookingStub, clientEmail: string): boolean {
+    return (
+        booking.contact?.email === clientEmail &&
+        booking.status !== "Cancelled" &&
+        !isRedemptionBooking(booking)
+    )
+}
+
+function isValidVoucher(voucher: VoucherStub, clientId: string): boolean {
+    return (
+        voucher.clientId === clientId &&
+        voucher.status !== "VOID" &&
+        voucher.status !== "REFUNDED" &&
+        !voucher.giftedFrom  // Gifted vouchers don't count as revenue
+    )
+}
+
+export const calculateClientSpend = (
+    bookings: BookingStub[],
+    vouchers: VoucherStub[],
+    clientEmail: string,
+    clientId: string
+): number => {
+    const bookingSpend = bookings.reduce((sum, b) =>
+        isValidBooking(b, clientEmail) ? sum + (Number(b.priceSnapshot) || 0) : sum
+        , 0)
+
+    const voucherSpend = vouchers.reduce((sum, v) =>
+        isValidVoucher(v, clientId) ? sum + (Number(v.pricePaid) || 0) : sum
+        , 0)
+
+    return bookingSpend + voucherSpend
+}
 
 export const determineTier = (spend: number): string => {
-    let tier = "Seeker"
-    for (const t of TIERS) {
-        if (spend >= t.spend) tier = t.name
-    }
-    return tier
+    return TIERS.reduce((tier, t) => spend >= t.spend ? t.name : tier, "Seeker")
 }

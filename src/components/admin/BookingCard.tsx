@@ -4,17 +4,12 @@ import { CheckSquare, Play, LogOut, MessageCircle, Clock } from "lucide-react"
 import { Booking } from "@/types"
 
 export interface BookingProps {
-    booking: any
+    booking: Booking & { visitCount?: number }
     onClick: () => void
     statusColors: Record<string, string>
 }
 
 export const BookingCard = ({ booking, onClick, statusColors }: BookingProps) => {
-
-    const getVisitCount = (handle?: string) => {
-        return booking.visitCount || 1
-    }
-
     return (
         <motion.div
             layout
@@ -31,7 +26,7 @@ export const BookingCard = ({ booking, onClick, statusColors }: BookingProps) =>
                             {booking.contact?.name || "Guest"}
                         </h4>
                         {/* Visit Badge */}
-                        {(booking.visitCount > 1) && (
+                        {((booking.visitCount || 0) > 1) && (
                             <span className="text-[9px] bg-[#D1C09B]/10 text-[#D1C09B] px-2 py-0.5 rounded-full uppercase tracking-widest font-bold border border-[#D1C09B]/20">
                                 {booking.visitCount}th Visit
                             </span>

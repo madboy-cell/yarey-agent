@@ -1,21 +1,29 @@
 "use client"
 
-import { useEffect, useState, useRef, Suspense } from "react"
+import { useEffect, useState, useMemo, Suspense } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import Link from "next/link"
 import { useSearchParams, useRouter } from "next/navigation"
 import { Container } from "@/components/layout/container"
 import { PulseTab } from "@/components/admin/PulseTab"
+import { MenuTab } from "@/components/admin/MenuTab"
+import { BotanicalsTab } from "@/components/admin/BotanicalsTab"
+import { LabTab } from "@/components/admin/LabTab"
+import { MembersTab } from "@/components/admin/MembersTab"
+import { FinanceTab } from "@/components/admin/FinanceTab"
+import { VouchersTab } from "@/components/admin/VouchersTab"
+import { CircleTab } from "@/components/admin/CircleTab"
+
 import { Button } from "@/components/ui/button"
 import {
-    Users, Calendar, Clock, MoreVertical, Wind, Sun, Users2, CheckCircle2,
-    Trash2, QrCode, MessageCircle, Play, CheckSquare, LogOut, Plus, Edit2,
-    Eye, EyeOff, Save, X, LayoutGrid, List, MapPin, Receipt, Gift, Mail, Download, FlaskConical, DollarSign, User, ChevronDown
+    Calendar, Users, Wind, Sun, QrCode, LogOut, Plus, X, Receipt,
+    FlaskConical, Gift, Search, Lock, Handshake
 } from "lucide-react"
-import html2canvas from "html2canvas"
+
 import { useFirestoreCollection, useFirestoreCRUD, useFirestoreDoc } from "@/hooks/useFirestore"
-import { db } from "@/lib/firebase"
-import { collection, doc, onSnapshot, orderBy } from "firebase/firestore"
+import { updateVibeStats } from "@/lib/vibe"
+
+import { orderBy } from "firebase/firestore"
 import { signOut } from "firebase/auth"
 import { auth } from "@/lib/firebase"
 import { BookingCard } from "@/components/admin/BookingCard"
@@ -24,26 +32,7 @@ import { DailyClosingModal } from "@/components/admin/DailyClosingModal" // Impo
 import { Scanner } from '@yudiel/react-qr-scanner'
 
 // Types
-import { Booking, Salesman, Treatment, Voucher, Client } from "@/types"
-
-interface Block {
-    id: string
-    time: string
-    date: string
-    reason: string
-}
-
-
-
-export interface Session {
-    id: string
-    email: string
-    score: number
-    pillar: string
-    metrics: any
-    protocol: any[]
-    timestamp: any
-}
+import { Booking, Salesman, Treatment, Voucher, Client, Block, Session, CircleEvent, CircleMedia } from "@/types"
 
 export default function AdminDashboard() {
     return (
@@ -56,11 +45,7 @@ export default function AdminDashboard() {
 function AdminDashboardContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
-    const [activeTab, setActiveTab] = useState<"sanctuary" | "menu" | "analytics" | "vouchers" | "lab">("sanctuary")
-
-
-
-
+    const [activeTab, setActiveTab] = useState<"sanctuary" | "members" | "menu" | "analytics" | "vouchers" | "lab" | "botanicals" | "finance" | "circle">("sanctuary")
     // Handle Deep Links (e.g. from CRM)
     useEffect(() => {
         const tab = searchParams.get("tab")
@@ -70,10 +55,10 @@ function AdminDashboardContent() {
 
         if (tab === "vouchers") {
             setActiveTab("vouchers")
+        } else if (tab === "members") {
+            setActiveTab("members")
         }
-        if (recipient) {
-            setVoucherForm(prev => ({ ...prev, recipientName: recipient, clientId: clientId || undefined }))
-        }
+        // Deep-link recipient is now handled within VouchersTab
     }, [searchParams])
     // Optimistic UI for instant feedback
     const [optimisticVibe, setOptimisticVibe] = useState<string | null>(null)
@@ -103,18 +88,31 @@ function AdminDashboardContent() {
     // Data Fetching
     const { data: rawBookings } = useFirestoreCollection<Booking>("bookings")
     const { data: treatments } = useFirestoreCollection<Treatment>("treatments")
+    const { data: elixirs } = useFirestoreCollection<any>("elixirs") // New: Fetch Elixirs
     const { data: blocks } = useFirestoreCollection<Block>("blocks")
     const { data: vouchers } = useFirestoreCollection<Voucher>("vouchers")
     const { data: salesmen } = useFirestoreCollection<Salesman>("salesmen")
     const { data: sessions } = useFirestoreCollection<Session>("biomarker_logs", [orderBy("timestamp", "desc")])
-    const { data: clients } = useFirestoreCollection<Client>("clients") // Fetch Clients
-    const { data: expenses } = useFirestoreCollection<{ id: string, month: string, title: string, amount: number, category: string }>("expenses") // For Analytics Net Profit
-    const { data: targetSettings } = useFirestoreDoc<{ monthlyGoals: Record<string, number> }>("settings", "targets") // Monthly Targets
+    const { data: clients } = useFirestoreCollection<Client>("clients")
+    const { data: expenses } = useFirestoreCollection<{ id: string, month: string, title: string, amount: number, category: string }>("expenses")
+    const { data: targetSettings } = useFirestoreDoc<{ monthlyGoals: Record<string, number> }>("settings", "targets")
+    const { data: circleEvents } = useFirestoreCollection<CircleEvent>("circle_events")
+    const { data: circleMedia } = useFirestoreCollection<CircleMedia>("circle_media")
 
     // Derived: Today's Bookings
     const todayStr = new Date().toLocaleDateString("en-CA")
     const todayBookings = rawBookings.filter(b => b.date === todayStr)
-    const bookings = rawBookings // Alias backwards compatibility for history lookups like 'getVisitCount'
+
+    // Derived: Today's Events
+    const todayEvents = circleEvents.filter(e =>
+        ["confirmed", "completed"].includes(e.status) && e.dates.includes(todayStr)
+    )
+
+    // Derived: Today's Media Visits
+    const todayMedia = circleMedia.filter(m =>
+        ["scheduled", "visited"].includes(m.status) && m.visitDate === todayStr
+    )
+    const bookings = rawBookings
 
     // Global Settings (Vibe) - Direct Document Subscription
     const { data: vibeDoc } = useFirestoreDoc<{ current: string, id: string }>("settings", "vibe")
@@ -127,8 +125,6 @@ function AdminDashboardContent() {
 
     // --- CRUD Operations ---
     const bookingOps = useFirestoreCRUD("bookings")
-    const treatmentOps = useFirestoreCRUD("treatments")
-    const salesmanOps = useFirestoreCRUD("salesmen")
     const settingsOps = useFirestoreCRUD("settings")
     const blockOps = useFirestoreCRUD("blocks")
     const voucherOps = useFirestoreCRUD("vouchers")
@@ -138,59 +134,16 @@ function AdminDashboardContent() {
     // Enhanced Update Handler for Modal
     const handleUpdateBooking = async (id: string, updates: any) => {
         await bookingOps.update(id, updates)
+        await updateVibeStats()
     }
 
     const handleDeleteBooking = async (id: string) => {
         await bookingOps.remove(id)
+        await updateVibeStats()
     }
 
-    // Delete All Bookings Function
-    const handleDeleteAllBookings = async () => {
-        const confirmMessage = `⚠️ WARNING: This will permanently delete ALL ${rawBookings.length} bookings from the database.\n\nType "DELETE ALL" to confirm:`
-        const userInput = prompt(confirmMessage)
 
-        if (userInput === "DELETE ALL") {
-            try {
-                console.log(`🗑️  Deleting ${rawBookings.length} bookings...`)
 
-                // Delete all bookings one by one
-                for (const booking of rawBookings) {
-                    await bookingOps.remove(booking.id)
-                }
-
-                alert(`✅ Successfully deleted ${rawBookings.length} bookings!`)
-            } catch (error) {
-                console.error('Error deleting bookings:', error)
-                alert('❌ Error deleting bookings. Check console for details.')
-            }
-        } else if (userInput !== null) {
-            alert('Deletion cancelled. You must type "DELETE ALL" exactly.')
-        }
-    }
-
-    // Form State for Treatments
-    const [isEditing, setIsEditing] = useState(false)
-    const [currentTreatment, setCurrentTreatment] = useState<Partial<Treatment>>({})
-    const [deleteId, setDeleteId] = useState<string | null>(null)
-
-    // Form State for Vouchers
-    const [voucherForm, setVoucherForm] = useState({
-        treatmentId: "",
-        pricePaid: 0,
-        recipientName: "",
-        validityPeriod: "3M", // 1M, 3M, 6M, 1Y, CUSTOM
-        customExpiration: "",
-        clientId: undefined as string | undefined,
-        isPackage: false,
-        credits: 10
-    })
-    const [generatedVoucher, setGeneratedVoucher] = useState<Voucher | null>(null)
-    const [isMemberSearchOpen, setIsMemberSearchOpen] = useState(false)
-
-    // Ticket Generation State
-    const [tempVoucher, setTempVoucher] = useState<Voucher | null>(null)
-    const [downloadingId, setDownloadingId] = useState<string | null>(null)
-    const ticketRef = useRef<HTMLDivElement>(null)
 
     // --- Auto-Pilot: Status Automation ---
     useEffect(() => {
@@ -199,6 +152,7 @@ function AdminDashboardContent() {
 
             const now = new Date()
 
+            let updated = false
             todayBookings.forEach(b => {
                 if (!b.time) return
 
@@ -225,23 +179,28 @@ function AdminDashboardContent() {
 
                 // 3. Logic: Confirmed -> Arrived (At Start Time)
                 if (b.status === "Confirmed" && now >= startTime && now < endTime) {
-                    console.log(`[Auto-Pilot] Marking ${b.contact?.name} as Arrived`)
                     bookingOps.update(b.id, { status: "Arrived" })
+                    updated = true
                 }
 
                 // 4. Logic: Active -> Complete (At End Time)
                 const activeStatuses = ["Confirmed", "Arrived", "In Ritual", "Started", "Checked In"]
                 if (activeStatuses.includes(b.status) && now >= endTime) {
-                    console.log(`[Auto-Pilot] Completing ${b.contact?.name}`)
                     bookingOps.update(b.id, { status: "Complete" })
+                    updated = true
                 }
             })
+
+            if (updated) {
+                updateVibeStats()
+            }
         }
 
         const interval = setInterval(checkStatus, 60000) // Check every minute
         checkStatus() // Run once immediately
         return () => clearInterval(interval)
-    }, [todayBookings, treatments, activeTab])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [todayBookings.length, treatments.length])
 
     // Scanner State
     const [isScanning, setIsScanning] = useState(false)
@@ -258,25 +217,22 @@ function AdminDashboardContent() {
 
     // --- Actions ---
 
-    const getVisitCount = (handle?: string) => {
-        if (!handle) return 1
-        return bookings.filter(b => b.contact?.handle === handle && b.status !== "Cancelled").length
-    }
+    const visitCountMap = useMemo(() => {
+        const map = new Map<string, number>()
+        bookings.forEach(b => {
+            const handle = b.contact?.handle
+            if (handle && b.status !== "Cancelled") {
+                map.set(handle, (map.get(handle) || 0) + 1)
+            }
+        })
+        return map
+    }, [bookings])
+    const getVisitCount = (handle?: string) => handle ? (visitCountMap.get(handle) || 1) : 1
 
-    const getPillarColor = (id: number) => {
-        switch (id) {
-            case 1: return "bg-purple-100 text-purple-600 border-purple-200" // Nervous
-            case 2: return "bg-red-100 text-red-600 border-red-200" // Repair
-            case 3: return "bg-emerald-100 text-emerald-600 border-emerald-200" // Resilience
-            case 4: return "bg-blue-100 text-blue-600 border-blue-200" // Respiratory
-            case 5: return "bg-amber-100 text-amber-600 border-amber-200" // Circadian
-            default: return "bg-gray-100 text-gray-600 border-gray-200"
-        }
-    }
+
 
     const updateVibe = async (newVibe: string) => {
         try {
-            console.log("Updating vibe to:", newVibe)
             setOptimisticVibe(newVibe) // Instant visual update
             // Use set to ensure we target/create the specific 'vibe' document ID
             await settingsOps.set("vibe", { id: "vibe", current: newVibe })
@@ -303,140 +259,16 @@ function AdminDashboardContent() {
 
     const handleStatus = async (id: string, newStatus: string) => {
         await bookingOps.update(id, { status: newStatus })
+        await updateVibeStats()
     }
 
     const handleNote = async (id: string, note: string) => {
         await bookingOps.update(id, { notes: note })
+        await updateVibeStats()
     }
 
-    // Treatment Logic
-    const saveTreatment = async () => {
-        if (!currentTreatment.title || !currentTreatment.price_thb) return alert("Title and Price required")
 
-        const payload = {
-            title: currentTreatment.title,
-            price_thb: currentTreatment.price_thb,
-            duration_min: currentTreatment.duration_min,
-            category: currentTreatment.category,
-            description: currentTreatment.description,
-            active: currentTreatment.active ?? true,
-            includes: currentTreatment.includes || []
-        }
 
-        if (currentTreatment.id) {
-            await treatmentOps.update(currentTreatment.id, payload)
-        } else {
-            await treatmentOps.add(payload)
-        }
-
-        setIsEditing(false)
-        setCurrentTreatment({})
-    }
-
-    const deleteTreatment = (id: string) => {
-        setDeleteId(id)
-    }
-
-    const confirmDelete = async () => {
-        if (deleteId) {
-            await treatmentOps.remove(deleteId)
-            setDeleteId(null)
-        }
-    }
-
-    const toggleActive = async (id: string) => {
-        const t = treatments.find(x => x.id === id)
-        if (t) {
-            await treatmentOps.update(id, { active: !t.active })
-        }
-    }
-
-    // Voucher Logic
-    const generateVoucher = async () => {
-        if (!voucherForm.treatmentId) return alert("Please select a treatment")
-
-        // Strict Member Check
-        if (!voucherForm.clientId) {
-            return alert("Restricted: You must select a valid member from the search list. Walk-in guests must be registered first.")
-        }
-
-        const treatment = treatments.find(t => t.id === voucherForm.treatmentId)
-        if (!treatment) return
-
-        const code = `PROMO-${Math.random().toString(36).substr(2, 6).toUpperCase()}`
-
-        const newVoucher = {
-            code,
-            treatmentId: treatment.id,
-            // Prepend duration for easy parsing by Member Portal regex
-            treatmentTitle: `${treatment.duration_min}m | ${treatment.title}`,
-            pricePaid: voucherForm.pricePaid,
-            originalPrice: treatment.price_thb,
-            status: "ISSUED",
-            recipientName: voucherForm.recipientName,
-            clientId: voucherForm.clientId,
-            issuedAt: new Date().toISOString(),
-            type: voucherForm.isPackage ? "package" : "single",
-            creditsTotal: voucherForm.isPackage ? voucherForm.credits : 1,
-            creditsRemaining: voucherForm.isPackage ? voucherForm.credits : 1,
-            expiresAt: (() => {
-                const d = new Date()
-                if (voucherForm.validityPeriod === "1M") d.setMonth(d.getMonth() + 1)
-                else if (voucherForm.validityPeriod === "3M") d.setMonth(d.getMonth() + 3)
-                else if (voucherForm.validityPeriod === "6M") d.setMonth(d.getMonth() + 6)
-                else if (voucherForm.validityPeriod === "1Y") d.setFullYear(d.getFullYear() + 1)
-                else if (voucherForm.validityPeriod === "CUSTOM" && voucherForm.customExpiration) return new Date(voucherForm.customExpiration).toISOString()
-                else d.setMonth(d.getMonth() + 3) // Default fallback
-                return d.toISOString()
-            })()
-        }
-
-        const id = await voucherOps.add(newVoucher)
-        setGeneratedVoucher({ ...newVoucher, id } as Voucher)
-
-        setVoucherForm(prev => ({ ...prev, recipientName: "" }))
-    }
-
-    // Auto-fill price when treatment selected
-    useEffect(() => {
-        if (voucherForm.treatmentId) {
-            const t = treatments.find(x => x.id === voucherForm.treatmentId)
-            if (t) setVoucherForm(prev => ({ ...prev, pricePaid: t.price_thb }))
-        }
-    }, [voucherForm.treatmentId, treatments])
-
-    // --- Ticket Download Logic ---
-    const downloadTicket = async (v: Voucher) => {
-        setDownloadingId(v.id)
-        setTempVoucher(v)
-
-        // Wait for render
-        setTimeout(async () => {
-            if (ticketRef.current) {
-                try {
-                    const canvas = await html2canvas(ticketRef.current, {
-                        backgroundColor: null, // Transparent bg if needed, but we have styles
-                        scale: 2, // High res
-                        logging: false,
-                        useCORS: true // For images if any (noise texture)
-                    })
-
-                    const link = document.createElement('a')
-                    link.download = `Yarey_Ticket_${v.code}.png`
-                    link.href = canvas.toDataURL('image/png')
-                    link.click()
-                } catch (err: any) {
-                    console.error("Ticket generation failed", err)
-                    alert(`Failed to generate ticket image: ${err?.message || "Unknown error"}`)
-                }
-            } else {
-                console.error("Ticket ref not found")
-                alert("Ticket generation failed: DOM element not ready.")
-            }
-            setDownloadingId(null)
-            setTempVoucher(null)
-        }, 800) // Increased delay slightly to be safe
-    }
 
 
     // --- UI Helpers ---
@@ -477,7 +309,34 @@ function AdminDashboardContent() {
         Evening: todayBookings.filter(b => isBookingInPhase(b.time, "Evening"))
     }
 
-    const statusColors: any = {
+    // Helper: determine which phase an event belongs to
+    const getEventPhase = (event: CircleEvent): string => {
+        if (event.blockType === "morning") return "Morning"
+        if (event.blockType === "sun_peak") return "SunPeak"
+        if (event.blockType === "evening") return "Evening"
+        if (event.blockType === "whole_day") return "all" // show in all phases
+        // Use startTime to determine phase
+        if (event.startTime) {
+            const hour = parseInt(event.startTime.split(":")[0])
+            if (hour < 12) return "Morning"
+            if (hour < 17) return "SunPeak"
+            return "Evening"
+        }
+        return "Morning" // default
+    }
+
+    // Helper: determine which phase a media visit belongs to
+    const getMediaPhase = (media: CircleMedia): string => {
+        if (media.visitTime) {
+            const hour = parseInt(media.visitTime.split(":")[0])
+            if (hour < 12) return "Morning"
+            if (hour < 17) return "SunPeak"
+            return "Evening"
+        }
+        return "Morning" // default
+    }
+
+    const statusColors: Record<string, string> = {
         "Confirmed": "bg-primary/10 border-primary/30 text-primary backdrop-blur-sm",
         "Arrived": "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
         "In Ritual": "bg-orange-500/20 text-orange-300 border-orange-500/30",
@@ -486,149 +345,243 @@ function AdminDashboardContent() {
     }
 
     return (
-        <div className="min-h-screen bg-background py-16 aura-bg relative overflow-hidden">
+        <div className="min-h-screen bg-background pb-24 relative overflow-hidden">
             <div className="fixed inset-0 noise z-0 pointer-events-none opacity-[0.03]" />
 
-            <Container className="max-w-7xl relative z-10">
+            {/* ═══════════════════════════════════════════════
+                TOP BAR — Logo, Phase, Actions
+            ═══════════════════════════════════════════════ */}
+            <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/30">
+                <div className="max-w-7xl mx-auto px-4 md:px-8">
+                    {/* Row 1: Logo + Phase + Actions */}
+                    <div className="h-14 md:h-16 flex items-center justify-between gap-3">
+                        {/* Left: Brand */}
+                        <div className="flex items-center gap-3 min-w-0">
+                            <h1 className="text-lg md:text-xl font-serif text-foreground tracking-tight whitespace-nowrap">Yarey</h1>
+                            <div className="hidden md:block w-px h-5 bg-border/40" />
+                            <span className="hidden md:block text-[9px] uppercase tracking-[0.4em] text-foreground/30 font-medium whitespace-nowrap">
+                                {headerInfo || "STAFF PORTAL"}
+                            </span>
+                        </div>
 
-                {/* Header */}
-                <header className="flex justify-between items-end mb-12">
-                    <div className="space-y-4">
-                        <motion.div
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            className="text-[10px] uppercase tracking-[0.5em] text-primary/60 font-medium"
-                        >
-                            {headerInfo || "STAFF PORTAL • PHUKET"}
-                        </motion.div>
-                        <h1 className="text-4xl md:text-6xl font-serif text-foreground tracking-tighter lowercase leading-none">Host Sanctuary.</h1>
+                        {/* Right: Quick Actions */}
+                        <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+                            {/* Mobile phase badge */}
+                            <span className="md:hidden text-[8px] uppercase tracking-[0.3em] text-primary/60 font-bold mr-1 whitespace-nowrap">
+                                {headerInfo?.split("•")[1]?.trim() || ""}
+                            </span>
+
+                            <Link href="/admin/walk-in">
+                                <Button size="sm" className="h-9 md:h-10 rounded-xl bg-primary text-background hover:bg-primary/90 px-3 md:px-5 text-[10px] md:text-xs font-bold uppercase tracking-wider gap-1.5 shadow-lg shadow-primary/15">
+                                    <Plus className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Check-in</span>
+                                </Button>
+                            </Link>
+
+                            <Button
+                                onClick={() => setIsScanning(true)}
+                                size="sm"
+                                variant="outline"
+                                className="h-9 md:h-10 w-9 md:w-10 rounded-xl border-border/50 text-foreground/50 hover:text-primary hover:border-primary/40 p-0"
+                                title="Scan QR"
+                            >
+                                <QrCode className="w-4 h-4" />
+                            </Button>
+
+                            <Button
+                                onClick={() => setShowDailyClosing(true)}
+                                size="sm"
+                                variant="outline"
+                                className="h-9 md:h-10 w-9 md:w-10 rounded-xl border-border/50 text-foreground/50 hover:text-primary hover:border-primary/40 p-0"
+                                title="Z-Report"
+                            >
+                                <Receipt className="w-4 h-4" />
+                            </Button>
+
+
+
+                            <div className="w-px h-6 bg-border/30 mx-0.5" />
+
+
+
+                            <Button
+                                onClick={() => signOut(auth)}
+                                size="sm"
+                                variant="ghost"
+                                className="h-9 md:h-10 w-9 md:w-10 rounded-xl text-red-400/60 hover:text-red-400 hover:bg-red-500/10 p-0"
+                                title="Sign Out"
+                            >
+                                <LogOut className="w-4 h-4" />
+                            </Button>
+                        </div>
                     </div>
 
-                    <div className="flex flex-col xl:flex-row items-start xl:items-center gap-6 w-full">
-                        {/* Tab Switcher */}
-                        <div className="bg-white/50 backdrop-blur-sm p-1 rounded-[2rem] flex flex-wrap gap-1 border border-border/50 w-full xl:w-auto justify-center">
+                    {/* Row 2: Tab Navigation — horizontally scrollable on mobile */}
+                    <div className="-mb-px overflow-x-auto scrollbar-hide">
+                        <div className="flex gap-0.5 min-w-max">
                             {[
-                                { id: "sanctuary", label: "Host View" },
-                                { id: "menu", label: "Menu CMS" },
-                                { id: "vouchers", label: "Vouchers" },
-                                { id: "analytics", label: "Analytics" },
-                                { id: "lab", label: "Lab" }
+                                { id: "sanctuary", label: "Host View", icon: Calendar },
+                                { id: "members", label: "Members", icon: Users },
+                                { id: "menu", label: "Menu", icon: FlaskConical },
+                                { id: "botanicals", label: "Elixirs", icon: FlaskConical },
+                                { id: "vouchers", label: "Vouchers", icon: Gift },
+                                { id: "analytics", label: "Analytics", icon: Search },
+                                { id: "circle", label: "Circle", icon: Handshake },
+                                { id: "finance", label: "Finance", icon: Lock },
+                                { id: "lab", label: "Lab", icon: FlaskConical },
                             ].map(tab => (
                                 <button
                                     key={tab.id}
                                     onClick={() => setActiveTab(tab.id as any)}
-                                    className={`px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest transition-all ${activeTab === tab.id ? "bg-primary text-white shadow-lg" : "text-foreground/40 hover:text-foreground"}`}
+                                    className={`flex items-center gap-2 px-4 md:px-5 py-3 text-[10px] md:text-[11px] uppercase tracking-[0.15em] font-bold whitespace-nowrap border-b-2 transition-all duration-300 ${activeTab === tab.id
+                                        ? "border-primary text-primary"
+                                        : "border-transparent text-foreground/35 hover:text-foreground/60 hover:border-foreground/10"
+                                        }`}
                                 >
+                                    <tab.icon className="w-3.5 h-3.5" />
                                     {tab.label}
                                 </button>
                             ))}
                         </div>
-
-
-                        {/* New Booking Action */}
-                        <div className="flex gap-2 md:gap-4 flex-wrap w-full xl:w-auto justify-center xl:justify-end">
-                            {/* Command Center */}
-                            <div className="flex flex-wrap gap-2 items-center">
-                                <Link href="/admin/walk-in">
-                                    <Button className="h-10 rounded-full bg-primary text-[#0A2021] hover:bg-primary/90 px-6 font-bold uppercase tracking-wider shadow-lg shadow-primary/20 flex items-center gap-2 transition-all hover:scale-105">
-                                        <Plus className="w-4 h-4" /> Guest Check-in
-                                    </Button>
-                                </Link>
-
-                                <Button
-                                    onClick={() => setIsScanning(true)}
-                                    className="h-10 rounded-full bg-white/5 border border-white/10 text-primary hover:bg-primary/10 px-6 font-bold uppercase tracking-wider flex items-center gap-2"
-                                >
-                                    <QrCode className="w-4 h-4" /> Scan
-                                </Button>
-                                {/* Logout Button */}
-                                <Button
-                                    onClick={() => signOut(auth)}
-                                    variant="ghost"
-                                    className="h-10 w-10 p-0 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20"
-                                    title="Sign Out"
-                                >
-                                    <LogOut className="w-4 h-4" />
-                                </Button>
-
-                                <div className="w-[1px] h-8 bg-white/10 mx-2" />
-
-                                <Button
-                                    onClick={() => setShowDailyClosing(true)}
-                                    variant="ghost"
-                                    className="h-10 w-10 rounded-full border border-white/10 hover:bg-white/5 text-foreground/40 hover:text-foreground p-0"
-                                    title="Z-Report"
-                                >
-                                    <Receipt className="w-4 h-4" />
-                                </Button>
-                                <Link href="/admin/finance">
-                                    <Button variant="ghost" className="h-10 w-10 rounded-full border border-white/10 hover:bg-white/5 text-foreground/40 hover:text-foreground p-0" title="Finance">
-                                        <DollarSign className="w-4 h-4" />
-                                    </Button>
-                                </Link>
-                                <Link href="/admin/clients">
-                                    <Button variant="ghost" className="h-10 w-10 rounded-full border border-white/10 hover:bg-white/5 text-foreground/40 hover:text-foreground p-0" title="Clients">
-                                        <Users className="w-4 h-4" />
-                                    </Button>
-                                </Link>
-                            </div>
-
-                        </div>
                     </div>
-                </header>
+                </div>
+            </header>
 
+            {/* ═══════════════════════════════════════════════
+                CONTENT
+            ═══════════════════════════════════════════════ */}
+            <Container className="max-w-7xl relative z-10 pt-8">
                 {/* Tab Content */}
                 {activeTab === "sanctuary" && (
                     // --- HOST VIEW (Timeline) ---
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 min-h-[600px]">
-                        {Object.entries(timeline).map(([phase, items], i) => (
-                            <div key={phase} className="space-y-6">
-                                <div className="flex items-center justify-between border-b border-border/40 pb-4">
-                                    <h3 className="font-serif text-xl text-foreground/60 lowercase flex items-center gap-3">
-                                        {i === 0 && <Sun className="w-4 h-4 opacity-50 rotate-[-45deg]" />}
-                                        {i === 1 && <Sun className="w-4 h-4 opacity-50" />}
-                                        {i === 2 && <Wind className="w-4 h-4 opacity-50" />}
-                                        {phase.replace(/([A-Z])/g, ' $1').trim()}
-                                    </h3>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] bg-primary/5 px-3 py-1 rounded-full text-primary font-bold tracking-widest uppercase">
-                                            {items.filter(b => ["Arrived", "In Ritual", "Complete"].includes(b.status)).reduce((acc, b) => acc + (Number(b.guests) || 1), 0)}
-                                            <span className="opacity-40"> / {items.reduce((acc, b) => acc + (Number(b.guests) || 1), 0)}</span> Guests
-                                        </span>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => toggleBlock(phase.replace(/([A-Z])/g, ' $1').trim())}
-                                            className={`h-6 text-[10px] uppercase font-bold tracking-widest border ${blocks.find(b => b.time === phase.replace(/([A-Z])/g, ' $1').trim()) ? "bg-red-500 text-white border-red-500 hover:bg-red-600" : "border-border text-foreground/40"}`}
-                                        >
-                                            {blocks.find(b => b.time === phase.replace(/([A-Z])/g, ' $1').trim()) ? "Blocked" : "Block"}
-                                        </Button>
+                        {Object.entries(timeline).map(([phase, items], i) => {
+                            const phaseLabel = phase.replace(/([A-Z])/g, ' $1').trim()
+                            const phaseBlock = blocks.find(b => b.time === phaseLabel)
+                            return (
+                                <div key={phase} className="space-y-6">
+                                    <div className="flex items-center justify-between border-b border-border/40 pb-4">
+                                        <h3 className="font-serif text-xl text-foreground/60 lowercase flex items-center gap-3">
+                                            {i === 0 && <Sun className="w-4 h-4 opacity-50 rotate-[-45deg]" />}
+                                            {i === 1 && <Sun className="w-4 h-4 opacity-50" />}
+                                            {i === 2 && <Wind className="w-4 h-4 opacity-50" />}
+                                            {phaseLabel}
+                                        </h3>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] bg-primary/5 px-3 py-1 rounded-full text-primary font-bold tracking-widest uppercase">
+                                                {items.filter(b => ["Arrived", "In Ritual", "Complete"].includes(b.status)).reduce((acc, b) => acc + (Number(b.guests) || 1), 0)}
+                                                <span className="opacity-40"> / {items.reduce((acc, b) => acc + (Number(b.guests) || 1), 0)}</span> Guests
+                                            </span>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => toggleBlock(phaseLabel)}
+                                                className={`h-6 text-[10px] uppercase font-bold tracking-widest border ${phaseBlock ? "bg-red-500 text-white border-red-500 hover:bg-red-600" : "border-border text-foreground/40"}`}
+                                            >
+                                                {phaseBlock ? "Blocked" : "Block"}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {/* Blocked State Overlay */}
+                                        {phaseBlock && (
+                                            <div className="bg-red-50/50 border border-red-100 p-6 rounded-[2rem] text-center mb-4">
+                                                <div className="text-red-500 font-serif text-xl mb-1">Sanctuary Closed</div>
+                                                <div className="text-[10px] uppercase tracking-widest text-red-400 font-bold">{phaseBlock.reason}</div>
+                                            </div>
+                                        )}
+
+                                        <AnimatePresence>
+                                            {items.map(booking => (
+                                                <BookingCard
+                                                    key={booking.id}
+                                                    booking={{ ...booking, visitCount: getVisitCount(booking.contact?.handle) }}
+                                                    statusColors={statusColors}
+                                                    onClick={() => setSelectedBooking({ ...booking, visitCount: getVisitCount(booking.contact?.handle) })}
+                                                />
+                                            ))}
+                                        </AnimatePresence>
+
+                                        {/* Event Cards for this phase */}
+                                        {todayEvents
+                                            .filter(ev => {
+                                                const evPhase = getEventPhase(ev)
+                                                return evPhase === phase || evPhase === "all"
+                                            })
+                                            .map(ev => (
+                                                <motion.div
+                                                    key={`event-${ev.id}`}
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/30 rounded-[2rem] p-5 relative overflow-hidden"
+                                                >
+                                                    <div className="absolute top-3 right-3">
+                                                        <span className="text-[8px] uppercase tracking-widest font-bold bg-amber-500/20 text-amber-400 px-2.5 py-1 rounded-full border border-amber-500/30">
+                                                            🎪 Event
+                                                        </span>
+                                                    </div>
+                                                    <div className="font-serif text-lg text-foreground mb-1">{ev.title}</div>
+                                                    <div className="text-[10px] text-foreground/40 mb-3">by {ev.hostName}</div>
+                                                    <div className="flex flex-wrap gap-2 text-[10px]">
+                                                        <span className="bg-card/50 text-foreground/50 px-2 py-1 rounded-md">
+                                                            🕐 {ev.startTime || "—"} → {ev.endTime || "—"}
+                                                        </span>
+                                                        <span className="bg-card/50 text-foreground/50 px-2 py-1 rounded-md">
+                                                            👥 {ev.expectedGuests} guests
+                                                        </span>
+                                                        <span className={`px-2 py-1 rounded-md font-mono ${ev.financialType === "we_earn" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                                                            {ev.financialType === "we_earn" ? "+" : "-"}฿{ev.amount.toLocaleString()}
+                                                        </span>
+                                                    </div>
+                                                    {ev.notes && <div className="text-[10px] text-foreground/30 italic mt-2">{ev.notes}</div>}
+                                                </motion.div>
+                                            ))}
+
+                                        {/* Media Visit Cards for this phase */}
+                                        {todayMedia
+                                            .filter(m => getMediaPhase(m) === phase)
+                                            .map(m => (
+                                                <motion.div
+                                                    key={`media-${m.id}`}
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    className="bg-gradient-to-br from-purple-500/10 to-fuchsia-500/10 border border-purple-500/30 rounded-[2rem] p-5 relative overflow-hidden"
+                                                >
+                                                    <div className="absolute top-3 right-3">
+                                                        <span className={`text-[8px] uppercase tracking-widest font-bold px-2.5 py-1 rounded-full border ${m.status === "visited"
+                                                            ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                                                            : "bg-purple-500/20 text-purple-400 border-purple-500/30"
+                                                            }`}>
+                                                            {m.status === "visited" ? "✅ Visited" : "📸 Media"}
+                                                        </span>
+                                                    </div>
+                                                    <div className="font-serif text-lg text-foreground mb-1">{m.name}</div>
+                                                    {m.instagramHandle && (
+                                                        <div className="text-[10px] text-pink-400 mb-2">📷 {m.instagramHandle}{m.instagramFollowers ? ` · ${(m.instagramFollowers / 1000).toFixed(1)}K` : ""}</div>
+                                                    )}
+                                                    <div className="flex flex-wrap gap-2 text-[10px]">
+                                                        <span className="bg-card/50 text-foreground/50 px-2 py-1 rounded-md">
+                                                            🕐 {m.visitTime || "—"}
+                                                        </span>
+                                                        {m.treatmentBooked && (
+                                                            <span className="bg-card/50 text-foreground/50 px-2 py-1 rounded-md">
+                                                                💆 {m.treatmentBooked}
+                                                            </span>
+                                                        )}
+                                                        {m.cost > 0 && (
+                                                            <span className="bg-red-500/10 text-red-400 px-2 py-1 rounded-md font-mono">
+                                                                -฿{m.cost.toLocaleString()}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {m.contentDeliverables && <div className="text-[10px] text-foreground/30 mt-2">📝 {m.contentDeliverables}</div>}
+                                                </motion.div>
+                                            ))}
+
+                                        {items.length === 0 && todayEvents.filter(ev => { const p = getEventPhase(ev); return p === phase || p === "all" }).length === 0 && todayMedia.filter(m => getMediaPhase(m) === phase).length === 0 && <div className="h-32 rounded-[2rem] border border-dashed border-border/40 flex items-center justify-center"><p className="text-foreground/20 text-xs italic">Free flow</p></div>}
                                     </div>
                                 </div>
-                                <div className="space-y-4">
-                                    {/* Blocked State Overlay */}
-                                    {blocks.find(b => b.time === phase.replace(/([A-Z])/g, ' $1').trim()) && (
-                                        <div className="bg-red-50/50 border border-red-100 p-6 rounded-[2rem] text-center mb-4">
-                                            <div className="text-red-500 font-serif text-xl mb-1">Sanctuary Closed</div>
-                                            <div className="text-[10px] uppercase tracking-widest text-red-400 font-bold">{blocks.find(b => b.time === phase.replace(/([A-Z])/g, ' $1').trim())?.reason}</div>
-                                        </div>
-                                    )}
-
-                                    <AnimatePresence>
-                                        {items.map(booking => (
-                                            <BookingCard
-                                                key={booking.id}
-                                                booking={{ ...booking, visitCount: getVisitCount(booking.contact?.handle) }}
-                                                statusColors={statusColors}
-                                                onClick={() => setSelectedBooking({ ...booking, visitCount: getVisitCount(booking.contact?.handle) })}
-                                            />
-                                        ))}
-                                    </AnimatePresence>
-
-                                    {items.length === 0 && <div className="h-32 rounded-[2rem] border border-dashed border-border/40 flex items-center justify-center"><p className="text-foreground/20 text-xs italic">Free flow</p></div>}
-                                </div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 )}
 
@@ -646,733 +599,130 @@ function AdminDashboardContent() {
                         />
                     )}
                 </AnimatePresence>
-                {
-                    activeTab === "menu" && (
-                        // --- MENU MANAGER (CMS) ---
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12">
-                            <div className="lg:col-span-8 space-y-8 order-2 lg:order-1">
-                                <div className="flex items-center justify-between">
-                                    <h2 className="font-serif text-2xl text-foreground">Treatment Menu</h2>
-                                    <Button onClick={() => { setCurrentTreatment({}); setIsEditing(true) }} className="rounded-full px-6 bg-primary text-white hover:bg-primary/90">
-                                        <Plus className="w-4 h-4 mr-2" /> Add New
-                                    </Button>
-                                </div>
+                {activeTab === "menu" && <MenuTab treatments={treatments} />}
 
-                                <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-x-auto shadow-2xl">
-                                    <table className="w-full text-left">
-                                        <thead className="bg-secondary/30 border-b border-primary/10">
-                                            <tr>
-                                                <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Treatment</th>
-                                                <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Category</th>
-                                                <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Price</th>
-                                                <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold text-right">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-primary/5">
-                                            {treatments.map((t) => (
-                                                <tr key={t.id} className={`hover:bg-primary/5 transition-colors ${!t.active ? "opacity-50" : ""}`}>
-                                                    <td className="p-6">
-                                                        <div className="font-serif text-lg">{t.title}</div>
-                                                        <div className="text-xs text-foreground/50">{t.duration_min} Minutes</div>
-                                                    </td>
-                                                    <td className="p-6">
-                                                        <span className="px-3 py-1 rounded-full bg-background border border-border text-[10px] uppercase tracking-wider font-bold">{t.category}</span>
-                                                    </td>
-                                                    <td className="p-6 font-mono text-sm">฿{t.price_thb.toLocaleString()}</td>
-                                                    <td className="p-6 text-right space-x-2">
-                                                        <Button variant="ghost" onClick={() => toggleActive(t.id)} title={t.active ? "Hide" : "Show"}>
-                                                            {t.active ? <Eye className="w-4 h-4 text-emerald-500" /> : <EyeOff className="w-4 h-4 text-gray-400" />}
-                                                        </Button>
-                                                        <Button variant="ghost" onClick={() => { setCurrentTreatment(t); setIsEditing(true) }}>
-                                                            <Edit2 className="w-4 h-4 text-blue-500" />
-                                                        </Button>
-                                                        <Button variant="ghost" onClick={() => deleteTreatment(t.id)}>
-                                                            <Trash2 className="w-4 h-4 text-red-500" />
-                                                        </Button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                {activeTab === "botanicals" && <BotanicalsTab elixirs={elixirs} />}
 
-                            {/* Edit Form Panel */}
-                            <div className="lg:col-span-4 order-1 lg:order-2">
-                                <AnimatePresence>
-                                    {isEditing && (
-                                        <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="bg-card rounded-[2.5rem] p-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-primary/20 sticky top-32 backdrop-blur-md">
-                                            <div className="flex justify-between items-center mb-8">
-                                                <h3 className="font-serif text-xl">{currentTreatment.id ? "Edit Ritual" : "New Ritual"}</h3>
-                                                <Button variant="ghost" onClick={() => setIsEditing(false)}><X className="w-5 h-5" /></Button>
-                                            </div>
+                {activeTab === "vouchers" && (
+                    <VouchersTab vouchers={vouchers} treatments={treatments} clients={clients} onScan={() => setIsScanning(true)} />
+                )}
 
-                                            <div className="space-y-6">
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Title</label>
-                                                    <input type="text" className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary placeholder:text-gray-400" value={currentTreatment.title || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, title: e.target.value })} placeholder="e.g. Deep Tissue" />
-                                                </div>
+                {activeTab === "analytics" && (
+                    <PulseTab bookings={bookings} treatments={treatments} salesmen={salesmen} expenses={expenses} targetSettings={targetSettings} onEdit={setSelectedBooking} />
+                )}
 
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="space-y-2">
-                                                        <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Price (THB)</label>
-                                                        <input type="number" className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary placeholder:text-gray-400" value={currentTreatment.price_thb || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, price_thb: Number(e.target.value) })} placeholder="2500" />
-                                                    </div>
-                                                    <div className="space-y-2">
-                                                        <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Duration (Min)</label>
-                                                        <input type="number" className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary placeholder:text-gray-400" value={currentTreatment.duration_min || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, duration_min: Number(e.target.value) })} placeholder="60" />
-                                                    </div>
-                                                </div>
+                {activeTab === "members" && <MembersTab clients={clients} bookings={bookings} vouchers={vouchers} />}
 
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Category</label>
-                                                    <select className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary" value={currentTreatment.category || "Massage"} onChange={e => setCurrentTreatment({ ...currentTreatment, category: e.target.value })}>
-                                                        <option value="Massage">Massage</option>
-                                                        <option value="Nordic Zone">Nordic Zone</option>
-                                                        <option value="Rest">Rest</option>
-                                                        <option value="Package">Package</option>
-                                                    </select>
-                                                </div>
+                {activeTab === "finance" && <FinanceTab bookings={bookings} salesmen={salesmen} expenses={expenses} />}
 
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Description</label>
-                                                    <textarea className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary min-h-[100px] placeholder:text-gray-400" value={currentTreatment.description || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, description: e.target.value })} placeholder="Guest facing copy..." />
-                                                </div>
+                {activeTab === "lab" && <LabTab sessions={sessions} />}
 
-                                                <div className="space-y-2">
-                                                    <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Includes (CSV)</label>
-                                                    <input type="text" className="w-full bg-white border border-border/50 rounded-xl px-4 py-3 text-sm text-[#051818] focus:outline-none focus:border-primary placeholder:text-gray-400" value={currentTreatment.includes?.join(", ") || ""} onChange={e => setCurrentTreatment({ ...currentTreatment, includes: e.target.value.split(",").map(s => s.trim()) })} placeholder="Sauna, Tea, Scrub" />
-                                                </div>
+                {activeTab === "circle" && <CircleTab bookings={bookings} expenses={expenses} treatments={treatments} salesmen={salesmen} />}
+            </Container>
 
-                                                <Button onClick={saveTreatment} className="w-full rounded-xl bg-primary hover:bg-primary/90 text-white py-6">
-                                                    <Save className="w-4 h-4 mr-2" /> Save Ritual
-                                                </Button>
-                                            </div>
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </div>
-                        </div>
-                    )
-                }
-
-                {
-                    activeTab === "vouchers" && (
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-12">
-                            {/* 1. Generator Panel (Left) */}
-                            <div className="lg:col-span-5 space-y-8">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h2 className="font-serif text-2xl text-foreground mb-1">Issue Voucher</h2>
-                                        <p className="text-sm text-foreground/60">Generate prepaid codes or scan.</p>
-                                    </div>
-                                    <Button onClick={() => setIsScanning(true)} variant="outline" className="rounded-full border-primary/40 text-primary hover:bg-primary/10">
-                                        <QrCode className="w-4 h-4 mr-2" /> Scan Ticket
-                                    </Button>
-                                </div>
-
-                                <div className="bg-[#0c2627] rounded-[2rem] p-8 border border-primary/20 shadow-lg space-y-6">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Select Ritual</label>
-                                        <select
-                                            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary appearance-none"
-                                            value={voucherForm.treatmentId}
-                                            onChange={(e) => setVoucherForm(prev => ({ ...prev, treatmentId: e.target.value }))}
-                                        >
-                                            <option value="">-- Choose Treatment --</option>
-                                            {treatments.filter(t => t.active).map(t => (
-                                                <option key={t.id} value={t.id}>{t.duration_min}m | {t.title} ({t.price_thb} THB)</option>
-                                            ))}
-                                        </select>
-                                    </div>
-
-                                    {/* Type Selector */}
-                                    <div className="flex gap-4 items-center pl-2">
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="type"
-                                                checked={!voucherForm.isPackage}
-                                                onChange={() => setVoucherForm(prev => ({ ...prev, isPackage: false }))}
-                                            />
-                                            <span className="text-sm text-foreground">Single Use</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input
-                                                type="radio"
-                                                name="type"
-                                                checked={voucherForm.isPackage}
-                                                onChange={() => setVoucherForm(prev => ({ ...prev, isPackage: true }))}
-                                            />
-                                            <span className="text-sm text-foreground">Multi-Use Package</span>
-                                        </label>
-                                    </div>
-
-                                    {voucherForm.isPackage && (
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Number of Valid Sessions</label>
-                                            <input
-                                                type="number"
-                                                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary"
-                                                value={voucherForm.credits}
-                                                onChange={(e) => setVoucherForm(prev => ({ ...prev, credits: Number(e.target.value) }))}
-                                                min={2}
-                                            />
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Promo Price (THB)</label>
-                                        <input
-                                            type="number"
-                                            className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary"
-                                            value={voucherForm.pricePaid}
-                                            onChange={(e) => setVoucherForm(prev => ({ ...prev, pricePaid: Number(e.target.value) }))}
-                                        />
-                                        <p className="text-[10px] text-foreground/40 italic pl-2">Current Standard Price: {treatments.find(t => t.id === voucherForm.treatmentId)?.price_thb || 0} THB</p>
-                                    </div>
-
-                                    <div className="space-y-2 relative">
-                                        <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Recipient Name</label>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary placeholder:text-gray-300 pr-10"
-                                                placeholder="Select or type member name..."
-                                                value={voucherForm.recipientName}
-                                                onFocus={() => setIsMemberSearchOpen(true)}
-                                                onBlur={() => setTimeout(() => setIsMemberSearchOpen(false), 200)}
-                                                onChange={(e) => {
-                                                    setVoucherForm(prev => ({ ...prev, recipientName: e.target.value, clientId: undefined }))
-                                                    setIsMemberSearchOpen(true)
-                                                }}
-                                            />
-
-                                            {/* Status Icon */}
-                                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                                                {voucherForm.clientId ? (
-                                                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                                                ) : (
-                                                    <ChevronDown className="w-5 h-5 text-gray-400" />
-                                                )}
-                                            </div>
-
-                                            {/* Member Suggestions Dropdown */}
-                                            {isMemberSearchOpen && (
-                                                <div className="absolute top-full left-0 w-full bg-white mt-1 rounded-xl shadow-xl border border-gray-100 z-50 max-h-60 overflow-y-auto">
-                                                    {clients
-                                                        .filter(c => c.name.toLowerCase().includes(voucherForm.recipientName.toLowerCase()))
-                                                        .slice(0, 100)
-                                                        .map(client => (
-                                                            <div
-                                                                key={client.id}
-                                                                className="p-3 hover:bg-gray-50 cursor-pointer flex justify-between items-center border-b border-gray-50 last:border-0 text-black transition-colors"
-                                                                onClick={() => setVoucherForm(prev => ({ ...prev, recipientName: client.name, clientId: client.id }))}
-                                                            >
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-bold text-sm text-gray-900">{client.name}</span>
-                                                                    <span className="text-[10px] text-gray-500">{client.email}</span>
-                                                                </div>
-                                                                <div className="text-[10px] font-mono text-gray-400 bg-gray-100 px-2 py-1 rounded">
-                                                                    {client.phone || "-"}
-                                                                </div>
-                                                            </div>
-                                                        ))
-                                                    }
-                                                    {clients.length === 0 && (
-                                                        <div className="p-4 text-center text-xs text-gray-400 italic">No members found. Sync from history?</div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold ml-2">Validity Period</label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <select
-                                                className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary"
-                                                value={voucherForm.validityPeriod}
-                                                onChange={(e) => setVoucherForm(prev => ({ ...prev, validityPeriod: e.target.value }))}
-                                            >
-                                                <option value="1M">1 Month</option>
-                                                <option value="3M">3 Months (Standard)</option>
-                                                <option value="6M">6 Months</option>
-                                                <option value="1Y">1 Year</option>
-                                                <option value="CUSTOM">Specific Date</option>
-                                            </select>
-                                            {voucherForm.validityPeriod === "CUSTOM" && (
-                                                <input
-                                                    type="date"
-                                                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm text-black focus:outline-none focus:border-primary"
-                                                    value={voucherForm.customExpiration}
-                                                    onChange={(e) => setVoucherForm(prev => ({ ...prev, customExpiration: e.target.value }))}
-                                                />
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <Button onClick={generateVoucher} className="w-full py-6 rounded-xl bg-primary hover:bg-primary/90 text-white text-sm uppercase tracking-widest">
-                                        <Gift className="w-4 h-4 mr-2" /> Generate Ticket
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {/* 2. Visual Output (Right) */}
-                            <div className="lg:col-span-7 space-y-8">
-                                <div>
-                                    <h2 className="font-serif text-2xl text-foreground mb-1">Active Vouchers</h2>
-                                    <p className="text-sm text-foreground/60">{vouchers.filter(v => v.status === "ISSUED").length} codes ready to redeem.</p>
-                                </div>
-
-                                {generatedVoucher && (
-                                    <div className="mb-12">
-                                        <div className="text-[10px] uppercase tracking-widest text-foreground/40 font-bold mb-4">Latest Generated Ticket</div>
-                                        <div className="aspect-[1.8/1] bg-[#F5F2F0] rounded-[2rem] border border-stone-200 relative overflow-hidden flex flex-col items-center justify-center p-8 noise shadow-2xl">
-                                            <div className="absolute top-0 w-full h-2 bg-gradient-to-r from-stone-300 via-stone-100 to-stone-300" />
-
-                                            <div className="text-center space-y-2 mb-6">
-                                                <p className="text-[10px] tracking-[0.4em] uppercase text-stone-400">Yarey Wellness</p>
-                                                <h3 className="text-3xl font-serif text-stone-800">{generatedVoucher.treatmentTitle}</h3>
-                                            </div>
-
-                                            <div className="bg-white px-8 py-4 rounded-xl border border-dashed border-stone-300 flex items-center gap-6 shadow-sm">
-                                                <div className="text-right">
-                                                    <p className="text-[9px] uppercase tracking-widest text-stone-400">Code</p>
-                                                    <p className="font-mono text-xl font-bold text-stone-800 tracking-wider">{generatedVoucher.code}</p>
-                                                </div>
-                                                <div className="h-8 w-px bg-stone-200" />
-                                                <div>
-                                                    <p className="text-[9px] uppercase tracking-widest text-stone-400">Value</p>
-                                                    <p className="font-serif text-xl text-primary">{generatedVoucher.pricePaid.toLocaleString()}.-</p>
-                                                </div>
-                                            </div>
-
-                                            <div className="absolute bottom-6 text-center text-stone-400">
-                                                <p className="text-[9px] italic">Valid for {generatedVoucher.recipientName}</p>
-                                                <p className="text-[8px] uppercase tracking-widest mt-1">Expires: {generatedVoucher.expiresAt ? new Date(generatedVoucher.expiresAt).toLocaleDateString() : "N/A"}</p>
-                                            </div>
-                                        </div>
-                                        <div className="text-center mt-4">
-                                            <p className="text-xs text-foreground/40">Screenshot above to send to client</p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* List of active codes */}
-                                <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-x-auto overflow-y-auto max-h-[400px] shadow-2xl">
-                                    <table className="w-full text-left">
-                                        <thead className="bg-[#0F2E2E]/60 border-b border-primary/10 sticky top-0 backdrop-blur-md">
-                                            <tr>
-                                                <th className="p-4 pl-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Code</th>
-                                                <th className="p-4 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Details</th>
-                                                <th className="p-4 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Status</th>
-                                                <th className="p-4 text-[10px] uppercase tracking-widest text-foreground/40 font-bold text-right">Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-border/10">
-                                            {vouchers.map((v) => (
-                                                <tr key={v.id} className="hover:bg-primary/5 transition-colors">
-                                                    <td className="p-4 pl-6 font-mono text-xs font-bold text-foreground/70">{v.code}</td>
-                                                    <td className="p-4">
-                                                        <div className="font-medium text-sm">{v.treatmentTitle}</div>
-                                                        <div className="text-[10px] text-foreground/40">For {v.recipientName} • ฿{v.pricePaid.toLocaleString()}</div>
-                                                    </td>
-                                                    <td className="p-4">
-                                                        {(() => {
-                                                            const isExpired = v.expiresAt && new Date() > new Date(v.expiresAt) && v.status === "ISSUED"
-                                                            const displayStatus = isExpired ? "EXPIRED" : v.status
-                                                            const statusStyle = displayStatus === 'ISSUED' ? 'bg-emerald-100 text-emerald-600' :
-                                                                displayStatus === 'REDEEMED' ? 'bg-gray-100 text-gray-400' :
-                                                                    'bg-red-100 text-red-500' // EXPIRED or VOID
-
-                                                            return (
-                                                                <div className="flex flex-col items-start gap-1">
-                                                                    <span className={`px-2 py-1 rounded text-[9px] uppercase font-bold tracking-wider ${statusStyle}`}>
-                                                                        {displayStatus}
-                                                                    </span>
-                                                                    {v.expiresAt && (
-                                                                        <span className="text-[9px] text-foreground/30">Exp: {new Date(v.expiresAt).toLocaleDateString()}</span>
-                                                                    )}
-                                                                </div>
-                                                            )
-                                                        })()}
-                                                    </td>
-                                                    <td className="p-4 text-right">
-                                                        {v.status === "ISSUED" ? (
-                                                            <>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    onClick={() => {
-                                                                        const subject = encodeURIComponent(`Digital Voucher: ${v.treatmentTitle}`)
-                                                                        const body = encodeURIComponent(`Dear ${v.recipientName},\n\nHere is your prepaid digital voucher for Yarey Wellness.\n\nCode: ${v.code}\nValue: ฿${v.pricePaid.toLocaleString()}\n\nPlease present this code upon arrival to redeem your ritual.\n\nWarm regards,\nYarey Team`)
-                                                                        window.open(`mailto:?subject=${subject}&body=${body}`, '_blank')
-                                                                    }}
-                                                                    className="h-8 rounded-full border-blue-200 text-blue-600 hover:bg-blue-50 text-[10px] uppercase font-bold tracking-wider px-3 mr-2"
-                                                                >
-                                                                    <Mail className="w-3 h-3 mr-2" /> Email
-                                                                </Button>
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="sm"
-                                                                    disabled={downloadingId === v.id}
-                                                                    onClick={() => downloadTicket(v)}
-                                                                    className="h-8 rounded-full border-stone-200 text-stone-600 hover:bg-stone-50 text-[10px] uppercase font-bold tracking-wider px-3"
-                                                                >
-                                                                    {downloadingId === v.id ? (
-                                                                        <span className="animate-pulse">Gen...</span>
-                                                                    ) : (
-                                                                        <>
-                                                                            <Download className="w-3 h-3 mr-2" />
-                                                                            Ticket
-                                                                        </>
-                                                                    )}
-                                                                </Button>
-                                                            </>
-                                                        ) : (
-                                                            <span className="text-foreground/20 text-[10px] mr-2">-</span>
-                                                        )}
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            onClick={async () => {
-                                                                if (confirm("Are you sure you want to delete this voucher? This cannot be undone.")) {
-                                                                    await voucherOps.remove(v.id)
-                                                                }
-                                                            }}
-                                                            className="h-8 w-8 rounded-full text-foreground/20 hover:text-red-500 hover:bg-red-500/10 p-0"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </Button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                            </div>
-                        </div>
-                    )
-                }
-
-                {
-                    activeTab === "analytics" && (
-                        <PulseTab bookings={bookings} treatments={treatments} salesmen={salesmen} expenses={expenses} targetSettings={targetSettings} onEdit={setSelectedBooking} />
-                    )
-                }
-
-                {
-                    activeTab === "lab" && (
-                        <div className="space-y-8">
-                            <div>
-                                <h2 className="font-serif text-2xl text-foreground mb-1">The Alchemist's Lab</h2>
-                                <p className="text-sm text-foreground/60">Biometric analysis history and guest physiology.</p>
-                            </div>
-
-                            <div className="bg-[#042A40]/30 backdrop-blur-md border border-primary/10 rounded-[2rem] overflow-x-auto shadow-2xl">
-                                <table className="w-full text-left">
-                                    <thead className="bg-[#0F2E2E]/60 border-b border-primary/10">
-                                        <tr>
-                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Time</th>
-                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Guest</th>
-                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Wellness Score</th>
-                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold">Pillar</th>
-                                            <th className="p-6 text-[10px] uppercase tracking-widest text-foreground/40 font-bold text-right">Metrics</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/10">
-                                        {sessions.map(s => (
-                                            <tr key={s.id} className="hover:bg-primary/5 transition-colors">
-                                                <td className="p-6 text-xs font-mono text-foreground/60">
-                                                    {s.timestamp?.toDate ? new Date(s.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "--:--"}
-                                                    <div className="text-[10px] opacity-50">{s.timestamp?.toDate ? new Date(s.timestamp.toDate()).toLocaleDateString() : ""}</div>
-                                                </td>
-                                                <td className="p-6 font-medium text-sm">{s.email || "Guest"}</td>
-                                                <td className="p-6">
-                                                    <span className={`text-xl font-light ${s.score > 80 ? "text-emerald-400" : s.score < 50 ? "text-red-400" : "text-amber-400"}`}>
-                                                        {s.score}
-                                                    </span>
-                                                    <span className="text-[10px] text-foreground/30 ml-1">/ 100</span>
-                                                </td>
-                                                <td className="p-6">
-                                                    <span className="px-3 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold border border-white/10 bg-white/5">
-                                                        {s.pillar}
-                                                    </span>
-                                                </td>
-                                                <td className="p-6 text-right font-mono text-[10px] text-foreground/50 space-x-3">
-                                                    <span title="HRV">♥ {s.metrics?.hrv || 0}ms</span>
-                                                    <span title="Resting Heart Rate">⚡ {s.metrics?.rhr || 0}bpm</span>
-                                                    <span title="Deep Sleep">💤 {s.metrics?.deepSleep || 0}m</span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {sessions.length === 0 && (
-                                            <tr>
-                                                <td colSpan={5} className="p-12 text-center text-foreground/30 italic text-sm">No analysis sessions recorded yet.</td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )
-                }
-
-                {/* Env Control Footer */}
-                <div className="mt-20 border-t border-border/40 pt-10 flex flex-col md:flex-row gap-6 justify-between items-center relative z-50 pointer-events-auto">
-                    <div className="flex gap-4 items-center">
-                        <h4 className="text-[10px] uppercase tracking-widest font-bold text-foreground/40">Sanctuary Vibe:</h4>
-                        <div className="flex gap-2">
+            {/* ═══════════════════════════════════════════════
+                FIXED BOTTOM BAR — Vibe Control
+            ═══════════════════════════════════════════════ */}
+            <div id="admin-bottom-bar" className="fixed bottom-0 left-0 right-0 z-40 bg-background/90 backdrop-blur-xl border-t border-border/30">
+                <div className="max-w-7xl mx-auto px-4 md:px-8 h-14 md:h-16 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <span className="text-[9px] uppercase tracking-[0.3em] text-foreground/30 font-bold hidden sm:block">Vibe</span>
+                        <div className="flex gap-1.5">
                             {["Quiet", "Moderate", "Lively"].map(v => (
                                 <button
                                     type="button"
                                     key={v}
                                     onClick={() => updateVibe(v)}
-                                    className={`
-                                        text-[10px] uppercase tracking-wider font-bold px-6 py-2 rounded-full border transition-all duration-300 cursor-pointer select-none
-                                        ${displayVibe === v
-                                            ? "bg-primary text-[#051818] border-primary shadow-lg shadow-primary/20 scale-105"
-                                            : "bg-transparent text-primary/60 border-primary/30 hover:border-primary/60 hover:text-primary"}
-                                    `}
+                                    className={`text-[9px] md:text-[10px] uppercase tracking-wider font-bold px-4 md:px-5 py-1.5 rounded-lg border transition-all duration-300 ${displayVibe === v
+                                        ? "bg-primary text-background border-primary shadow-md shadow-primary/20"
+                                        : "bg-transparent text-foreground/30 border-border/40 hover:border-primary/40 hover:text-primary/60"
+                                        }`}
                                 >
                                     {v}
                                 </button>
                             ))}
                         </div>
-
-                        {/* Active Guest Counter */}
-                        <div className="w-px h-6 bg-[#9A4E2F]/20 mx-2" />
-                        <span className="text-[10px] uppercase tracking-widest font-bold text-[#9A4E2F]/40">
-                            {todayBookings
-                                .filter(b => ["Arrived", "In Ritual", "Checked In", "Started"].includes(b.status) && isBookingInPhase(b.time, getCurrentPhase()))
-                                .reduce((acc, b) => acc + (b.guests || 1), 0)} Guests
-                        </span>
                     </div>
+                    <span className="text-[9px] uppercase tracking-[0.3em] font-bold text-primary/40">
+                        {todayBookings.filter(b => ["Arrived", "In Ritual", "Checked In", "Started"].includes(b.status) && isBookingInPhase(b.time, getCurrentPhase())).reduce((acc, b) => acc + (b.guests || 1), 0)} Guests Now
+                    </span>
                 </div>
+            </div>
 
-                {/* Daily Closing Modal */}
-                <AnimatePresence>
-                    {showDailyClosing && (
-                        <DailyClosingModal
-                            date={new Date().toISOString().split('T')[0]}
-                            bookings={bookings}
-                            onClose={() => setShowDailyClosing(false)}
-                        />
-                    )}
-                </AnimatePresence>
-
-                {/* Scanner Modal */}
-                <AnimatePresence>
-                    {isScanning && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
-                            <div className="bg-white rounded-[2rem] p-6 max-w-md w-full relative">
-                                <button onClick={() => setIsScanning(false)} className="absolute top-4 right-4 p-2 bg-gray-100 rounded-full">
-                                    <X className="w-5 h-5 text-black" />
-                                </button>
-                                <h3 className="text-xl font-serif text-black mb-4 text-center">Scan Guest Ticket</h3>
-                                <div className="rounded-xl overflow-hidden aspect-square bg-black">
-                                    <Scanner onScan={(result) => {
-                                        if (result && result.length > 0) {
-                                            handleScan(result[0].rawValue)
-                                        }
-                                    }} />
-                                </div>
-                                <p className="text-center text-gray-500 mt-4 text-sm">Point camera at the QR code</p>
-                            </div>
-                        </div>
-                    )}
-                </AnimatePresence>
-
-                {/* Scanned Voucher Detail Modal */}
-                <AnimatePresence>
-                    {scannedVoucher && (
-                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.9 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.9 }}
-                                className="bg-[#0c2627] border border-primary/20 rounded-[2rem] p-8 max-w-sm w-full shadow-2xl space-y-6"
-                            >
-                                <div className="text-center space-y-2">
-                                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider ${scannedVoucher.status === 'ISSUED' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
-                                        {scannedVoucher.status}
-                                    </div>
-                                    <h3 className="text-2xl font-serif text-primary">{scannedVoucher.treatmentTitle}</h3>
-                                    <p className="text-white/60 text-sm">For {scannedVoucher.recipientName}</p>
-                                </div>
-
-                                <div className="bg-black/20 rounded-xl p-4 text-center space-y-1 border border-white/5">
-                                    <p className="text-[10px] uppercase tracking-widest text-white/40">Voucher Code</p>
-                                    <p className="font-mono text-xl font-bold text-white tracking-widest">{scannedVoucher.code}</p>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="text-center">
-                                        <p className="text-[10px] uppercase tracking-widest text-white/40">Value</p>
-                                        <p className="text-white font-medium">฿{scannedVoucher.pricePaid.toLocaleString()}</p>
-                                    </div>
-                                    <div className="text-center">
-                                        <p className="text-[10px] uppercase tracking-widest text-white/40">Expires</p>
-                                        <p className="text-white font-medium">{scannedVoucher.expiresAt ? new Date(scannedVoucher.expiresAt).toLocaleDateString() : 'Never'}</p>
-                                    </div>
-                                </div>
-
-                                {scannedVoucher.status === "ISSUED" && (
-                                    <Button
-                                        onClick={async () => {
-                                            const isPackage = scannedVoucher.type === "package"
-                                            // Robust casting
-                                            const currentRemaining = typeof scannedVoucher.creditsRemaining === 'number'
-                                                ? scannedVoucher.creditsRemaining
-                                                : (scannedVoucher.creditsTotal || 1)
-
-                                            // Confirmation
-                                            if (!confirm(isPackage
-                                                ? `Deduct 1 Credit? (${currentRemaining} remaining)`
-                                                : `Redeem ${scannedVoucher.code} for ${scannedVoucher.recipientName}?`
-                                            )) return
-
-                                            if (isPackage) {
-                                                const newRemaining = currentRemaining - 1
-                                                const fullyRedeemed = newRemaining <= 0
-
-                                                console.log(`PUNCH CARD REDEEM: ${currentRemaining} -> ${newRemaining}`)
-
-                                                await voucherOps.update(scannedVoucher.id, {
-                                                    creditsRemaining: newRemaining,
-                                                    status: fullyRedeemed ? "REDEEMED" : "ISSUED",
-                                                    redeemedAt: fullyRedeemed ? new Date().toISOString() : undefined
-                                                })
-
-                                                alert(fullyRedeemed ? "✅ Package Finalized!" : `✅ Used 1 Credit. Remaining: ${newRemaining}`)
-                                                setScannedVoucher(null)
-                                            } else {
-                                                await voucherOps.update(scannedVoucher.id, {
-                                                    status: "REDEEMED",
-                                                    redeemedAt: new Date().toISOString()
-                                                })
-                                                setScannedVoucher(null)
-                                                alert("✅ Voucher Redeemed Successfully!")
-                                            }
-                                        }}
-                                        className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90"
-                                    >
-                                        {scannedVoucher.type === "package" ? `Use Credit (${scannedVoucher.creditsRemaining} Left)` : "Redeem Now"}
-                                    </Button>
-                                )}
-
-                                <Button
-                                    variant="ghost"
-                                    onClick={() => setScannedVoucher(null)}
-                                    className="w-full text-white/40 hover:text-white"
-                                >
-                                    Close
-                                </Button>
-                            </motion.div>
-                        </div>
-                    )}
-                </AnimatePresence>
-            </Container >
-
-            {/* Delete Confirmation Modal */}
+            {/* Daily Closing Modal */}
             <AnimatePresence>
-                {deleteId && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="bg-[#0c2627] border border-primary/20 rounded-[2rem] p-8 max-w-sm w-full shadow-[0_0_50px_rgba(0,0,0,0.5)] space-y-6"
-                        >
+                {showDailyClosing && (
+                    <DailyClosingModal date={new Date().toISOString().split('T')[0]} bookings={bookings} onClose={() => setShowDailyClosing(false)} />
+                )}
+            </AnimatePresence>
+
+            {/* Scanner Modal */}
+            <AnimatePresence>
+                {isScanning && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+                        <div className="bg-card rounded-2xl p-6 max-w-md w-full relative border border-border/30 shadow-2xl">
+                            <button onClick={() => setIsScanning(false)} className="absolute top-4 right-4 p-2 bg-secondary rounded-full hover:bg-primary/10 transition-colors"><X className="w-5 h-5 text-foreground/60" /></button>
+                            <h3 className="text-xl font-serif text-foreground mb-4 text-center">Scan Guest Ticket</h3>
+                            <div className="rounded-xl overflow-hidden aspect-square bg-black border border-border/20">
+                                <Scanner onScan={(result) => { if (result && result.length > 0) { handleScan(result[0].rawValue) } }} />
+                            </div>
+                            <p className="text-center text-foreground/30 mt-4 text-sm">Point camera at the QR code</p>
+                        </div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Scanned Voucher Detail Modal */}
+            <AnimatePresence>
+                {scannedVoucher && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="bg-[#0c2627] border border-primary/20 rounded-2xl p-8 max-w-sm w-full shadow-2xl space-y-6">
                             <div className="text-center space-y-2">
-                                <div className="w-12 h-12 rounded-full bg-red-100 text-red-500 flex items-center justify-center mx-auto">
-                                    <Trash2 className="w-6 h-6" />
+                                <div className={`inline-block px-3 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider ${scannedVoucher.status === 'ISSUED' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>{scannedVoucher.status}</div>
+                                <h3 className="text-2xl font-serif text-primary">{scannedVoucher.treatmentTitle}</h3>
+                                <p className="text-white/60 text-sm">For {scannedVoucher.recipientName}</p>
+                            </div>
+                            <div className="bg-black/20 rounded-xl p-4 text-center space-y-1 border border-white/5">
+                                <p className="text-[10px] uppercase tracking-widest text-white/40">Voucher Code</p>
+                                <p className="font-mono text-xl font-bold text-white tracking-widest">{scannedVoucher.code}</p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="text-center">
+                                    <p className="text-[10px] uppercase tracking-widest text-white/40">Value</p>
+                                    <p className="text-white font-medium">฿{(scannedVoucher.pricePaid || 0).toLocaleString()}</p>
                                 </div>
-                                <h3 className="text-xl font-serif text-foreground">Remove Ritual?</h3>
-                                <p className="text-sm text-foreground/60">This action cannot be undone. The treatment will be removed from the menu immediately.</p>
+                                <div className="text-center">
+                                    <p className="text-[10px] uppercase tracking-widest text-white/40">Expires</p>
+                                    <p className="text-white font-medium">{scannedVoucher.expiresAt ? new Date(scannedVoucher.expiresAt).toLocaleDateString() : 'Never'}</p>
+                                </div>
                             </div>
-                            <div className="flex gap-4">
-                                <Button variant="ghost" onClick={() => setDeleteId(null)} className="flex-1 rounded-xl">Cancel</Button>
-                                <Button onClick={confirmDelete} className="flex-1 rounded-xl bg-red-500 hover:bg-red-600 text-white">Delete</Button>
-                            </div>
+                            {scannedVoucher.status === "ISSUED" && (
+                                <Button onClick={async () => {
+                                    const isPackage = scannedVoucher.type === "package"
+                                    const currentRemaining = typeof scannedVoucher.creditsRemaining === 'number' ? scannedVoucher.creditsRemaining : (scannedVoucher.creditsTotal || 1)
+                                    if (!confirm(isPackage ? `Deduct 1 Credit? (${currentRemaining} remaining)` : `Redeem ${scannedVoucher.code} for ${scannedVoucher.recipientName}?`)) return
+                                    if (isPackage) {
+                                        const newRemaining = currentRemaining - 1
+                                        const fullyRedeemed = newRemaining <= 0
+                                        await voucherOps.update(scannedVoucher.id, { creditsRemaining: newRemaining, status: fullyRedeemed ? "REDEEMED" : "ISSUED", redeemedAt: fullyRedeemed ? new Date().toISOString() : undefined })
+                                        alert(fullyRedeemed ? "✅ Package Finalized!" : `✅ Used 1 Credit. Remaining: ${newRemaining}`)
+                                        setScannedVoucher(null)
+                                    } else {
+                                        await voucherOps.update(scannedVoucher.id, { status: "REDEEMED", redeemedAt: new Date().toISOString() })
+                                        setScannedVoucher(null)
+                                        alert("✅ Voucher Redeemed Successfully!")
+                                    }
+                                }} className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90">
+                                    {scannedVoucher.type === "package" ? `Use Credit (${scannedVoucher.creditsRemaining} Left)` : "Redeem Now"}
+                                </Button>
+                            )}
+                            <Button variant="ghost" onClick={() => setScannedVoucher(null)} className="w-full text-white/40 hover:text-white">Close</Button>
                         </motion.div>
                     </div>
                 )}
             </AnimatePresence>
 
-            {/* Hidden Ticket Render Container */}
-            {/* We use a zero-size overflow-hidden container to keep it in the DOM but invisible. 
-                Move completely off-screen can sometimes cause html2canvas to fail on some browsers/optimizations. */}
-            <div style={{ position: "fixed", top: 0, left: 0, width: 0, height: 0, overflow: "hidden" }}>
-                {tempVoucher && (
-                    <div
-                        ref={ticketRef}
-                        className="w-[800px] h-[450px] relative overflow-hidden flex flex-col items-center justify-between p-12 shrink-0"
-                        style={{ backgroundColor: "#051818", color: "#EAEAEA", fontFamily: "serif" }}
-                    >
-                        {/* Gold Border Frame */}
-                        <div className="absolute inset-4 border border-[#D1C09B] opacity-30 pointer-events-none" />
-                        <div className="absolute inset-5 border border-[#D1C09B] opacity-10 pointer-events-none" />
-
-                        {/* Top Branding */}
-                        <div className="text-center w-full pt-4 relative z-10">
-                            <p className="text-[10px] tracking-[0.6em] uppercase font-bold" style={{ color: "#D1C09B" }}>Gift Certificate</p>
-                            <div className="w-12 h-px bg-[#D1C09B] mx-auto mt-4 opacity-50" />
-                        </div>
-
-                        {/* Center Content */}
-                        <div className="text-center space-y-2 relative z-10">
-                            <p className="text-base tracking-[0.2em] uppercase opacity-60 font-sans" style={{ color: "#fff" }}>Yarey Wellness</p>
-                            <h3 className="text-5xl font-serif tracking-wide text-white drop-shadow-lg leading-tight" style={{ textShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>
-                                {tempVoucher.treatmentTitle}
-                            </h3>
-                        </div>
-
-                        {/* Details Box (Gold & Dark) */}
-                        <div className="w-[600px] flex items-center justify-between bg-[#082221] border border-[#D1C09B] px-10 py-6 relative z-10 shadow-2xl">
-                            {/* Decorative Corners for Box */}
-                            <div className="absolute top-0 left-0 w-2 h-2 border-l border-t border-[#D1C09B]" />
-                            <div className="absolute top-0 right-0 w-2 h-2 border-r border-t border-[#D1C09B]" />
-                            <div className="absolute bottom-0 left-0 w-2 h-2 border-l border-b border-[#D1C09B]" />
-                            <div className="absolute bottom-0 right-0 w-2 h-2 border-r border-b border-[#D1C09B]" />
-
-                            <div className="text-left">
-                                <p className="text-[8px] uppercase tracking-[0.2em] mb-1 font-sans" style={{ color: "#D1C09B" }}>Voucher Code</p>
-                                <p className="font-mono text-3xl font-bold tracking-widest text-white">{tempVoucher.code}</p>
-                            </div>
-
-                            <div className="h-10 w-px bg-[#D1C09B] opacity-20" />
-
-                            <div className="text-right">
-                                <p className="text-[8px] uppercase tracking-[0.2em] mb-1 font-sans" style={{ color: "#D1C09B" }}>Value</p>
-                                <p className="font-serif text-3xl font-medium text-[#D1C09B]">฿{tempVoucher.pricePaid.toLocaleString()}</p>
-                            </div>
-                        </div>
-
-                        {/* Footer */}
-                        <div className="text-center w-full pb-2 relative z-10 opacity-60 font-sans">
-                            <p className="text-[10px] tracking-wider uppercase mb-1">Presented to</p>
-                            <p className="text-lg font-serif italic text-white mb-2">{tempVoucher.recipientName}</p>
-                            <div className="flex justify-center gap-4 text-[9px] uppercase tracking-widest text-[#D1C09B]">
-                                <span>Expires: {tempVoucher.expiresAt ? new Date(tempVoucher.expiresAt).toLocaleDateString() : "Never"}</span>
-                                <span>•</span>
-                                <span>Sanctuary Phuket</span>
-                            </div>
-                        </div>
-                    </div>
-                )}
-                {/* Floating Action Button (Mobile) */}
-                <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setIsScanning(true)}
-                    className="fixed bottom-6 right-6 z-50 h-16 w-16 bg-primary rounded-full shadow-[0_0_30px_rgba(209,192,155,0.3)] flex items-center justify-center text-[#0A2021] md:hidden"
-                >
-                    <QrCode className="w-8 h-8" />
-                </motion.button>
-            </div>
-        </div >
+        </div>
     )
 }
+

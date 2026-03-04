@@ -1,6 +1,3 @@
-import jsPDF from "jspdf"
-import autoTable from "jspdf-autotable"
-
 export interface PayslipData {
     period: string // e.g. "January 2026"
     generatedDate: string
@@ -24,7 +21,10 @@ export interface PayslipData {
     netPay: number
 }
 
-export const generatePayslip = (data: PayslipData) => {
+export const generatePayslip = async (data: PayslipData) => {
+    const { default: jsPDF } = await import("jspdf")
+    const { default: autoTable } = await import("jspdf-autotable")
+
     const doc = new jsPDF()
 
     // -- Colors & Fonts --

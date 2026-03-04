@@ -1,56 +1,82 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { motion } from "framer-motion"
 import { X, Copy, Check, DollarSign, Receipt, CreditCard, Banknote, Users, Globe } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Booking } from "@/types"
 
 interface DailyClosingModalProps {
-    date: string // YYYY-MM-DD
+    date: string
     bookings: Booking[]
     onClose: () => void
 }
 
+const PAYMENT_METHOD_MAP = {
+    "Cash": "cash",
+    "Transfer": "transfer",
+    "Credit Card": "credit",
+    "WeChat Pay": "wechat",
+    "AliPay": "alipay"
+} as const
+
+const PaymentRow = ({ icon: Icon, label, amount, iconColor, isError = false }: {
+    icon: any
+    label: string
+    amount: number
+    iconColor: string
+    isError?: boolean
+}) => (
+    <div className={`flex justify-between items-center p-3 rounded-xl border ${isError ? 'bg-red-500/10 border-red-500/20 text-red-200' : 'bg-white/5 border-white/5'
+        }`}>
+        <div className="flex items-center gap-3 text-white">
+            <Icon className={`w-4 h-4 ${iconColor}`} />
+            <span>{label}</span>
+        </div>
+        <span className="font-mono font-bold">฿{amount.toLocaleString()}</span>
+    </div>
+)
+
 export const DailyClosingModal = ({ date, bookings, onClose }: DailyClosingModalProps) => {
+    const [selectedDate, setSelectedDate] = useState(date)
     const [copied, setCopied] = useState(false)
 
-    // Filter bookings for this date + Completed/Confirmed status
-    const dailyBookings = useMemo(() => {
-        return bookings.filter(b =>
-            b.date === date &&
+    const dailyBookings = useMemo(
+        () => bookings.filter(b =>
+            b.date === selectedDate &&
             b.status !== "Cancelled" &&
             b.status !== "No Show"
-        )
-    }, [bookings, date])
+        ),
+        [bookings, selectedDate]
+    )
 
-    // Calculate Totals
     const report = useMemo(() => {
-        let totalRevenue = 0
-        let cash = 0
-        let transfer = 0
-        let credit = 0
-        let wechat = 0
-        let alipay = 0
-        let other = 0
-        let guests = 0
+        const totals = {
+            totalRevenue: 0,
+            cash: 0,
+            transfer: 0,
+            credit: 0,
+            wechat: 0,
+            alipay: 0,
+            other: 0,
+            guests: 0
+        }
 
         dailyBookings.forEach(b => {
             const price = b.priceSnapshot || 0
-            totalRevenue += price
-            guests += (b.guests || 1)
+            totals.totalRevenue += price
+            totals.guests += (b.guests || 1)
 
-            if (b.paymentMethod === "Cash") cash += price
-            else if (b.paymentMethod === "Transfer") transfer += price
-            else if (b.paymentMethod === "Credit Card") credit += price
-            else if (b.paymentMethod === "WeChat Pay") wechat += price
-            else if (b.paymentMethod === "AliPay") alipay += price
-            else other += price
+            const methodKey = PAYMENT_METHOD_MAP[b.paymentMethod as keyof typeof PAYMENT_METHOD_MAP]
+            if (methodKey) {
+                totals[methodKey] += price
+            } else {
+                totals.other += price
+            }
         })
 
-        return { totalRevenue, cash, transfer, credit, wechat, alipay, other, guests }
+        return totals
     }, [dailyBookings])
 
-    const handleCopy = () => {
-        // Generate Guest List String
+    const handleCopy = useCallback(() => {
         const guestListText = dailyBookings.map((b, i) => {
             const name = b.contact?.name || "Guest"
             const treatment = b.treatment || "Service"
@@ -59,8 +85,15 @@ export const DailyClosingModal = ({ date, bookings, onClose }: DailyClosingModal
             return `${i + 1}. ${name} - ${treatment} - ฿${price} ${method}`
         }).join("\n")
 
+        const otherLine = report.other > 0 ? `❓ Other: ${report.other.toLocaleString()}` : ""
+        const displayDate = new Date(selectedDate).toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+        })
+
         const text = `🟢 YAREY WELLNESS - DAILY CLOSE
-📅 Date: ${new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+📅 Date: ${displayDate}
 
 💵 TOTAL REVENUE: ${report.totalRevenue.toLocaleString()} THB
 
@@ -69,7 +102,7 @@ export const DailyClosingModal = ({ date, bookings, onClose }: DailyClosingModal
 💳 Credit Card: ${report.credit.toLocaleString()}
 💬 WeChat: ${report.wechat.toLocaleString()}
 💎 AliPay: ${report.alipay.toLocaleString()}
-${report.other > 0 ? `❓ Other: ${report.other.toLocaleString()}` : ""}
+${otherLine}
 
 📝 GUEST LIST (${dailyBookings.length}):
 ${guestListText}
@@ -79,7 +112,7 @@ ${guestListText}
         navigator.clipboard.writeText(text)
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
-    }
+    }, [dailyBookings, report, selectedDate])
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -95,59 +128,37 @@ ${guestListText}
                             <h2 className="font-serif text-2xl text-primary tracking-wide flex items-center gap-2">
                                 <Receipt className="w-6 h-6" /> Daily Closing
                             </h2>
-                            <p className="text-gray-400 text-sm mt-1">{new Date(date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                                <input
+                                    type="date"
+                                    value={selectedDate}
+                                    onChange={(e) => setSelectedDate(e.target.value)}
+                                    className="bg-transparent text-gray-400 text-sm focus:text-white focus:outline-none cursor-pointer"
+                                />
+                            </div>
                         </div>
                         <Button variant="ghost" onClick={onClose} className="rounded-full h-10 w-10 p-0 hover:bg-white/5 text-gray-400 hover:text-white">
                             <X className="w-5 h-5" />
                         </Button>
                     </div>
 
-                    {/* Total Card */}
                     <div className="bg-primary/10 border border-primary/20 rounded-2xl p-6 mb-6 text-center">
                         <p className="text-xs uppercase tracking-widest text-primary/60 font-bold mb-2">Total Revenue</p>
                         <h1 className="text-4xl font-serif text-primary">฿{report.totalRevenue.toLocaleString()}</h1>
                     </div>
 
-                    {/* Breakdown */}
                     <div className="space-y-3 mb-8">
-                        <div className="flex justify-between items-center p-3 bg-white/5 rounded-xl border border-white/5">
-                            <div className="flex items-center gap-3 text-white">
-                                <Banknote className="w-4 h-4 text-green-400" />
-                                <span>Cash</span>
-                            </div>
-                            <span className="font-mono font-bold">฿{report.cash.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-3 bg-white/5 rounded-xl border border-white/5">
-                            <div className="flex items-center gap-3 text-white">
-                                <DollarSign className="w-4 h-4 text-blue-400" />
-                                <span>Transfer</span>
-                            </div>
-                            <span className="font-mono font-bold">฿{report.transfer.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-3 bg-white/5 rounded-xl border border-white/5">
-                            <div className="flex items-center gap-3 text-white">
-                                <CreditCard className="w-4 h-4 text-purple-400" />
-                                <span>Credit Card</span>
-                            </div>
-                            <span className="font-mono font-bold">฿{report.credit.toLocaleString()}</span>
-                        </div>
-                        {(report.wechat > 0 || report.alipay > 0) && (
-                            <div className="flex justify-between items-center p-3 bg-white/5 rounded-xl border border-white/5">
-                                <div className="flex items-center gap-3 text-white">
-                                    <Globe className="w-4 h-4 text-green-400" />
-                                    <span>Digital Wallet (WeChat/Ali)</span>
-                                </div>
-                                <span className="font-mono font-bold">฿{(report.wechat + report.alipay).toLocaleString()}</span>
-                            </div>
+                        <PaymentRow icon={Banknote} label="Cash" amount={report.cash} iconColor="text-green-400" />
+                        <PaymentRow icon={DollarSign} label="Transfer" amount={report.transfer} iconColor="text-blue-400" />
+                        <PaymentRow icon={CreditCard} label="Credit Card" amount={report.credit} iconColor="text-purple-400" />
+                        {report.wechat > 0 && (
+                            <PaymentRow icon={Globe} label="WeChat Pay" amount={report.wechat} iconColor="text-green-400" />
+                        )}
+                        {report.alipay > 0 && (
+                            <PaymentRow icon={Globe} label="AliPay" amount={report.alipay} iconColor="text-blue-400" />
                         )}
                         {report.other > 0 && (
-                            <div className="flex justify-between items-center p-3 bg-red-500/10 rounded-xl border border-red-500/20 text-red-200">
-                                <div className="flex items-center gap-3">
-                                    <Receipt className="w-4 h-4" />
-                                    <span>Unspecified</span>
-                                </div>
-                                <span className="font-mono font-bold">฿{report.other.toLocaleString()}</span>
-                            </div>
+                            <PaymentRow icon={Receipt} label="Unspecified" amount={report.other} iconColor="" isError />
                         )}
                     </div>
 
@@ -161,7 +172,8 @@ ${guestListText}
 
                     <Button
                         onClick={handleCopy}
-                        className={`w-full h-12 rounded-xl font-bold text-lg transition-all ${copied ? "bg-green-500 text-white" : "bg-primary text-[#051818] hover:bg-primary/90"}`}
+                        className={`w-full h-12 rounded-xl font-bold text-lg transition-all ${copied ? "bg-green-500 text-white" : "bg-primary text-[#051818] hover:bg-primary/90"
+                            }`}
                     >
                         {copied ? (
                             <><Check className="w-5 h-5 mr-2" /> Copied for LINE</>

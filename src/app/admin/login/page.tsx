@@ -20,7 +20,6 @@ export default function AdminLoginPage() {
 
         try {
             await signInWithEmailAndPassword(auth, credentials.email, credentials.password)
-            // Auth state listener in layout will handle the rest, but we push just in case
             router.push("/admin")
         } catch (err: any) {
             console.error(err)
